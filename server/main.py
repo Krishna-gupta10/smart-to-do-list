@@ -16,6 +16,7 @@ from utils.calendar_task import (
 from utils.gmail_task import summarize_emails, send_email, list_unread, search_email
 from fastapi.responses import RedirectResponse
 from utils.google_auth import get_auth_url, exchange_code
+from fastapi import FastAPI, Request
 
 
 load_dotenv()
