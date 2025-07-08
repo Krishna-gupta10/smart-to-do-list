@@ -34,49 +34,35 @@ class TaskInput(BaseModel):
 
 @app.get("/authorize")
 def authorize():
-    """Redirect user to Google OAuth page"""
-    try:
-        url = get_auth_url()
-        return RedirectResponse(url)
-    except Exception as e:
-        return {"error": str(e)}
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRETS_FILE,
+        scopes=SCOPES,
+        redirect_uri="https://smart-to-do-list-4bi2.onrender.com/oauth2callback"
+    )
+    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+    # Save state temporarily (you can use session, db, cache, etc.)
+    request.session = {"state": flow.credentials_to_dict()}
+    return RedirectResponse(auth_url)
 
 @app.get("/oauth2callback")
-def oauth2callback(code: str):
-    """Handle Google OAuth callback"""
-    try:
-        creds = exchange_code(code)
-        if creds:
-            return HTMLResponse(content="""
-                <html>
-                    <head><title>Authorized</title></head>
-                    <body>
-                        <h2>✅ Authorization successful!</h2>
-                        <script>
-                            setTimeout(() => {
-                                window.close();
-                            }, 1500);
-                        </script>
-                    </body>
-                </html>
-            """)
-        else:
-            raise Exception("Failed to retrieve credentials")
-    except Exception as e:
-        return HTMLResponse(content=f"""
-            <html>
-                <head><title>Authorization Error</title></head>
-                <body>
-                    <h2>❌ Authorization failed</h2>
-                    <p>Error: {str(e)}</p>
-                    <script>
-                        setTimeout(() => {{
-                            window.close();
-                        }}, 3000);
-                    </script>
-                </body>
-            </html>
-        """)
+def oauth2callback(request: Request):
+    state = request.session.get("state")
+
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRETS_FILE,
+        scopes=SCOPES,
+        state=state,
+        redirect_uri="https://your-backend-domain.com/oauth2callback"
+    )
+
+    flow.fetch_token(authorization_response=str(request.url))
+
+    creds = flow.credentials
+
+    with open("token.json", "w") as token_file:
+        token_file.write(creds.to_json())
+
+    return HTMLResponse("<h2>✅ Authorization successful. You can close this tab.</h2><script>window.close();</script>")
 
 @app.get("/check-auth")
 def check_auth():
