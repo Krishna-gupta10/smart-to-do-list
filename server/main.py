@@ -33,10 +33,15 @@ class AuthCodeInput(BaseModel):
     code: str
 
 @app.get("/authorize")
-def authorize():
+def authorize(request: Request):
     """Get Google OAuth authorization URL"""
     try:
-        auth_url = get_auth_url()
+        origin = request.query_params.get("origin")
+        auth_url, state = get_auth_url(origin=origin)
+        
+        # Store the state in the session
+        request.session["auth_state"] = state
+        
         return {"auth_url": auth_url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get auth URL: {str(e)}")
@@ -45,6 +50,12 @@ def authorize():
 def oauth2callback_get(request: Request):
     """Handle OAuth callback with authorization code (GET request)"""
     try:
+        # Get state from session
+        auth_state = request.session.get("auth_state")
+        
+        # Get origin from state
+        origin = auth_state.get("origin") if auth_state else "https://smart-to-do-list-4bi2.onrender.com"
+        
         code = request.query_params.get('code')
         error = request.query_params.get('error')
         
@@ -55,61 +66,38 @@ def oauth2callback_get(request: Request):
             <html>
             <head>
                 <title>Authorization Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
-                    .error {{ color: #e74c3c; }}
-                </style>
             </head>
             <body>
-                <h2 class="error">❌ Authorization Failed</h2>
-                <p>Error: {error}</p>
-                <p>This window will close automatically...</p>
                 <script>
                     // Notify parent window about the error
                     if (window.opener) {{
                         window.opener.postMessage({{ 
                             type: 'oauth_error', 
                             error: '{error}' 
-                        }}, '*');
+                        }}, '{origin}');
                     }}
-                    
-                    // Auto-close after 3 seconds
-                    setTimeout(() => {{
-                        window.close();
-                    }}, 3000);
+                    window.close();
                 </script>
             </body>
             </html>
             """)
         
         if not code:
-            return HTMLResponse("""
+            return HTMLResponse(f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <title>Authorization Error</title>
-                <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                    .error { color: #e74c3c; }
-                </style>
             </head>
             <body>
-                <h2 class="error">❌ Authorization Failed</h2>
-                <p>No authorization code received</p>
-                <p>This window will close automatically...</p>
                 <script>
-                    // Notify parent window about the error
-                    if (window.opener) {
-                        window.opener.postMessage({ 
+                    if (window.opener) {{
+                        window.opener.postMessage({{ 
                             type: 'oauth_error', 
                             error: 'No authorization code received' 
-                        }, '*');
-                    }
-                    
-                    // Auto-close after 3 seconds
-                    setTimeout(() => {
-                        window.close();
-                    }, 3000);
+                        }}, '{origin}');
+                    }}
+                    window.close();
                 </script>
             </body>
             </html>
@@ -118,130 +106,68 @@ def oauth2callback_get(request: Request):
         # Exchange code for credentials
         try:
             creds = exchange_code(code)
-            print(f"Credentials obtained: {creds is not None}")
-            print(f"Credentials valid: {creds.valid if creds else False}")
             
             # Return success page that properly notifies parent and closes
-            return HTMLResponse("""
+            return HTMLResponse(f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <title>Authorization Complete</title>
-                <style>
-                    body { 
-                        font-family: Arial, sans-serif; 
-                        text-align: center; 
-                        padding: 50px; 
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        margin: 0;
-                    }
-                    .success { 
-                        color: #27ae60; 
-                        font-size: 48px;
-                        margin-bottom: 20px;
-                    }
-                    .message {
-                        font-size: 24px;
-                        margin-bottom: 20px;
-                    }
-                    .sub-message {
-                        font-size: 16px;
-                        opacity: 0.8;
-                    }
-                </style>
             </head>
             <body>
-                <div class="success">✅</div>
-                <div class="message">Authorization Successful!</div>
-                <div class="sub-message">You can close this window and return to the app.</div>
                 <script>
-                    console.log('OAuth callback: Success');
-                    
                     // Notify parent window with success message
-                    if (window.opener && !window.opener.closed) {
-                        console.log('Notifying parent window...');
-                        window.opener.postMessage({ 
+                    if (window.opener && !window.opener.closed) {{
+                        window.opener.postMessage({{ 
                             type: 'oauth_success',
-                            data: { authorized: true }
-                        }, 'https://smart-to-do-list-4bi2.onrender.com');
-                    } else {
-                        console.log('No parent window found or parent window is closed');
-                    }
-                    
-                    // Auto-close after 2 seconds
-                    setTimeout(() => {
-                        console.log('Closing window...');
-                        window.close();
-                    }, 2000);
+                            data: {{ authorized: true }}
+                        }}, '{origin}');
+                    }}
+                    window.close();
                 </script>
             </body>
             </html>
             """)
             
         except Exception as auth_error:
-            print(f"Error during credential exchange: {str(auth_error)}")
             return HTMLResponse(f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <title>Authorization Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
-                    .error {{ color: #e74c3c; }}
-                </style>
             </head>
             <body>
-                <h2 class="error">❌ Authorization Failed</h2>
-                <p>Error during authentication: {str(auth_error)}</p>
-                <p>This window will close automatically...</p>
                 <script>
                     // Notify parent window about the error
                     if (window.opener) {{
                         window.opener.postMessage({{ 
                             type: 'oauth_error', 
                             error: 'Authentication failed: {str(auth_error)}' 
-                        }}, '*');
+                        }}, '{origin}');
                     }}
-                    
-                    // Auto-close after 3 seconds
-                    setTimeout(() => {{
-                        window.close();
-                    }}, 3000);
+                    window.close();
                 </script>
             </body>
             </html>
             """)
         
     except Exception as e:
-        print(f"Unexpected error in OAuth callback: {str(e)}")
         return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Authorization Error</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
-                .error {{ color: #e74c3c; }}
-            </style>
         </head>
         <body>
-            <h2 class="error">❌ Unexpected Error</h2>
-            <p>Error: {str(e)}</p>
-            <p>This window will close automatically...</p>
             <script>
                 // Notify parent window about the error
                 if (window.opener) {{
                     window.opener.postMessage({{ 
                         type: 'oauth_error', 
                         error: 'Unexpected error: {str(e)}' 
-                    }}, '*');
+                    }}, 'https://smart-to-do-list-4bi2.onrender.com');
                 }}
-                
-                // Auto-close after 3 seconds
-                setTimeout(() => {{
-                    window.close();
-                }}, 3000);
+                window.close();
             </script>
         </body>
         </html>

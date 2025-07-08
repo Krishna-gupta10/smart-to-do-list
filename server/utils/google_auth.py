@@ -21,7 +21,7 @@ TOKEN_FILE = "token.json"
 
 REDIRECT_URI = "https://evernote-ai.netlify.app/oauth2callback"
 
-def get_auth_url():
+def get_auth_url(origin: str = None):
     """Generate Google OAuth authorization URL"""
     try:
         if not os.path.exists(CLIENT_SECRETS_FILE):
@@ -33,14 +33,21 @@ def get_auth_url():
             redirect_uri=REDIRECT_URI
         )
         
-        auth_url, _ = flow.authorization_url(
+        auth_url, state = flow.authorization_url(
             prompt='consent',
             access_type='offline',
             include_granted_scopes='true'
         )
         
+        # Store the origin in the state
+        auth_state = {"state": state, "origin": origin}
+        
+        # We need to pass the state to the callback
+        from main import app
+        app.state.auth_state = auth_state
+        
         logger.info(f"Generated auth URL: {auth_url}")
-        return auth_url
+        return auth_url, state
         
     except Exception as e:
         logger.error(f"Error generating auth URL: {str(e)}")
