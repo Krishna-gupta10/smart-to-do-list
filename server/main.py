@@ -14,6 +14,8 @@ from utils.calendar_task import (
     check_availability
 )
 from utils.gmail_task import summarize_emails, send_email, list_unread, search_email
+from fastapi.responses import RedirectResponse
+from utils.google_auth import get_auth_url, exchange_code
 
 
 load_dotenv()
@@ -31,112 +33,59 @@ class TaskInput(BaseModel):
     task: str
 
 @app.get("/authorize")
-def auth():
+def authorize():
+    """Redirect user to Google OAuth page"""
     try:
-        result = authorize_user()
-        # Return HTML that closes the window and notifies parent
-        return HTMLResponse(content="""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Authorization Complete</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    margin: 0;
-                    background-color: #f0f2f5;
-                }
-                .container {
-                    text-align: center;
-                    background: white;
-                    padding: 2rem;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }
-                .success {
-                    color: #10b981;
-                    font-size: 1.2rem;
-                    margin-bottom: 1rem;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="success">✅ Authorization successful!</div>
-                <p>You can now close this window.</p>
-            </div>
-            <script>
-                setTimeout(() => {
-                    window.close();
-                }, 2000);
-            </script>
-        </body>
-        </html>
-        """)
+        url = get_auth_url()
+        return RedirectResponse(url)
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/oauth2callback")
+def oauth2callback(code: str):
+    """Handle Google OAuth callback"""
+    try:
+        creds = exchange_code(code)
+        if creds:
+            return HTMLResponse(content="""
+                <html>
+                    <head><title>Authorized</title></head>
+                    <body>
+                        <h2>✅ Authorization successful!</h2>
+                        <script>
+                            setTimeout(() => {
+                                window.close();
+                            }, 1500);
+                        </script>
+                    </body>
+                </html>
+            """)
+        else:
+            raise Exception("Failed to retrieve credentials")
     except Exception as e:
         return HTMLResponse(content=f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Authorization Error</title>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    margin: 0;
-                    background-color: #f0f2f5;
-                }}
-                .container {{
-                    text-align: center;
-                    background: white;
-                    padding: 2rem;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }}
-                .error {{
-                    color: #ef4444;
-                    font-size: 1.2rem;
-                    margin-bottom: 1rem;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="error">❌ Authorization failed</div>
-                <p>Error: {str(e)}</p>
-                <p>Please try again.</p>
-            </div>
-            <script>
-                setTimeout(() => {{
-                    window.close();
-                }}, 3000);
-            </script>
-        </body>
-        </html>
+            <html>
+                <head><title>Authorization Error</title></head>
+                <body>
+                    <h2>❌ Authorization failed</h2>
+                    <p>Error: {str(e)}</p>
+                    <script>
+                        setTimeout(() => {{
+                            window.close();
+                        }}, 3000);
+                    </script>
+                </body>
+            </html>
         """)
 
 @app.get("/check-auth")
 def check_auth():
-    """Check if user is authenticated"""
     try:
-        if os.path.exists('token.json'):
-            # Try to load credentials to verify they're valid
-            creds = get_credentials()
-            if creds and creds.valid:
-                return {"authorized": True}
-            else:
-                return {"authorized": False}
-        else:
-            return {"authorized": False}
+        creds = get_credentials()
+        return {"authorized": creds is not None}
     except Exception as e:
         return {"authorized": False, "error": str(e)}
+
 
 @app.post("/parse-and-execute")
 def parse_and_execute(data: TaskInput):

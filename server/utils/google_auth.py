@@ -1,45 +1,61 @@
 import os
-from google_auth_oauthlib.flow import InstalledAppFlow
+import json
+from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 SCOPES = [
-    'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.send',
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send"
 ]
 
-def authorize_user():
-    """Authorize user and save credentials"""
-    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-    creds = flow.run_local_server(port=8080)
+CLIENT_SECRETS_FILE = "credentials.json"
+
+# 🔁 This should match what you registered in Google Cloud Console
+REDIRECT_URI = "https://transcendent-selkie-ae3052.netlify.app/oauth2callback"
+
+def get_auth_url():
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRETS_FILE,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+
+    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
+    # Save flow state to use later
+    with open("flow_session.json", "w") as f:
+        f.write(json.dumps(flow.credentials_to_dict()))
     
-    # Save credentials
-    with open('token.json', 'w') as token_file:
+    return auth_url
+
+def exchange_code(code):
+    flow = Flow.from_client_secrets_file(
+        CLIENT_SECRETS_FILE,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    
+    # Save token
+    with open("token.json", "w") as token_file:
         token_file.write(creds.to_json())
-    
-    return {"message": "Authorized ✅"}
+
+    return creds
 
 def get_credentials():
-    """Get valid credentials, refreshing if necessary"""
     creds = None
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
     
-    # Load existing credentials
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    
-    # If there are no valid credentials, return None
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                # Save refreshed credentials
-                with open('token.json', 'w') as token_file:
-                    token_file.write(creds.to_json())
-            except Exception as e:
-                # If refresh fails, return None so user needs to re-authorize
-                return None
-        else:
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            with open("token.json", "w") as token_file:
+                token_file.write(creds.to_json())
+        except Exception:
             return None
-    
-    return creds
+
+    return creds if creds and creds.valid else None
