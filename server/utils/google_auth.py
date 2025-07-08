@@ -18,8 +18,7 @@ SCOPES = [
 
 CLIENT_SECRETS_FILE = "credentials.json"
 
-# This should match what you registered in Google Cloud Console
-REDIRECT_URI = "https://transcendent-selkie-ae3052.netlify.app/oauth2callback"
+REDIRECT_URI = "https://evernote-ai.netlify.app/oauth2callback"
 
 def get_auth_url():
     """Generate Google OAuth authorization URL"""
