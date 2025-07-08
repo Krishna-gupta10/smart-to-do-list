@@ -44,93 +44,147 @@ function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const checkAuthStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/check-auth`, {
-        method: 'GET',
-      });
-      const data = await res.json();
-      setIsAuthorized(data.authorized || false);
-    } catch (error) {
-      console.error('Error checking auth:', error);
-      setIsAuthorized(false);
+const checkAuthStatus = async () => {
+  try {
+    console.log('Checking auth status...');
+    const res = await fetch(`${API_BASE_URL}/check-auth`, {
+      method: 'GET',
+    });
+    const data = await res.json();
+    console.log('Auth status response:', data);
+    
+    setIsAuthorized(data.authorized || false);
+    
+    if (data.authorized) {
+      console.log('User is authorized');
+    } else {
+      console.log('User is not authorized');
     }
-    setCheckingAuth(false);
-  };
+  } catch (error) {
+    console.error('Error checking auth:', error);
+    setIsAuthorized(false);
+  }
+  setCheckingAuth(false);
+};
 
-  const handleAuthorize = async () => {
-    setAuthLoading(true);
-    try {
-      // Get the auth URL from your backend
-      const res = await fetch(`${API_BASE_URL}/authorize`, {
-        method: 'GET',
-      });
-      const data = await res.json();
+const handleAuthorize = async () => {
+  setAuthLoading(true);
+  console.log('Starting OAuth flow...');
+  
+  try {
+    // Get the auth URL from your backend
+    const res = await fetch(`${API_BASE_URL}/authorize`, {
+      method: 'GET',
+    });
+    const data = await res.json();
+    
+    if (data.auth_url) {
+      console.log('Opening OAuth popup...');
       
-      if (data.auth_url) {
-        // Open the OAuth popup
-        const authWindow = window.open(
-          data.auth_url, 
-          'oauth', 
-          'width=600,height=700,scrollbars=yes,resizable=yes,left=' + 
-          (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
-        );
+      // Open the OAuth popup
+      const authWindow = window.open(
+        data.auth_url, 
+        'oauth', 
+        'width=600,height=700,scrollbars=yes,resizable=yes,left=' + 
+        (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
+      );
+      
+      if (!authWindow) {
+        console.error('Failed to open popup window');
+        setAuthLoading(false);
+        return;
+      }
+      
+      // Handle popup messages
+      const handlePopupMessage = (event) => {
+        console.log('Received message from popup:', event.data);
         
-        // Poll for window closure and periodically check auth status
-        const checkClosed = setInterval(async () => {
-          if (authWindow.closed) {
-            clearInterval(checkClosed);
-            setAuthLoading(false);
-            
-            // Check auth status after window closes
-            setTimeout(async () => {
-              await checkAuthStatus();
-            }, 1000);
-          }
-        }, 1000);
+        // Security check - only accept messages from our domain or Google
+        if (event.origin !== window.location.origin && 
+            !event.origin.includes('googleapis.com') && 
+            !event.origin.includes('accounts.google.com')) {
+          console.log('Ignoring message from unknown origin:', event.origin);
+          return;
+        }
 
-        // Also periodically check auth status while window is open
-        const checkAuthPeriodically = setInterval(async () => {
-          if (authWindow.closed) {
-            clearInterval(checkAuthPeriodically);
-            return;
+        if (event.data.type === 'oauth_success') {
+          console.log('OAuth success received');
+          setIsAuthorized(true);
+          setAuthLoading(false);
+          
+          // Clean up
+          window.removeEventListener('message', handlePopupMessage);
+          if (authWindow && !authWindow.closed) {
+            authWindow.close();
           }
           
-          try {
-            const authRes = await fetch(`${API_BASE_URL}/check-auth`, {
-              method: 'GET',
-            });
-            const authData = await authRes.json();
-            
-            if (authData.authorized) {
-              setIsAuthorized(true);
-              setAuthLoading(false);
-              clearInterval(checkAuthPeriodically);
-              clearInterval(checkClosed);
-              
-              if (authWindow && !authWindow.closed) {
-                authWindow.close();
-              }
-            }
-          } catch (error) {
-            console.error('Error checking auth during polling:', error);
+          // Double-check auth status after a short delay
+          setTimeout(() => {
+            checkAuthStatus();
+          }, 1000);
+          
+        } else if (event.data.type === 'oauth_error') {
+          console.error('OAuth error received:', event.data.error);
+          setAuthLoading(false);
+          
+          // Clean up
+          window.removeEventListener('message', handlePopupMessage);
+          if (authWindow && !authWindow.closed) {
+            authWindow.close();
           }
-        }, 2000);
-
-        // Clean up intervals if component unmounts
-        return () => {
+          
+          // Show error message or handle error appropriately
+          // You might want to show a toast notification here
+        }
+      };
+      
+      // Listen for messages from the popup
+      window.addEventListener('message', handlePopupMessage);
+      
+      // Poll for window closure as a fallback
+      const checkClosed = setInterval(() => {
+        if (authWindow.closed) {
+          console.log('Popup window closed');
           clearInterval(checkClosed);
-          clearInterval(checkAuthPeriodically);
-        };
-      } else {
-        console.error('No auth URL received from backend');
-        setAuthLoading(false);
-      }
-    } catch (error) {
-      console.error('Error getting auth URL:', error);
+          setAuthLoading(false);
+          
+          // Clean up message listener
+          window.removeEventListener('message', handlePopupMessage);
+          
+          // Check auth status after window closes (fallback)
+          setTimeout(() => {
+            checkAuthStatus();
+          }, 1000);
+        }
+      }, 1000);
+      
+      // Cleanup function
+      const cleanup = () => {
+        clearInterval(checkClosed);
+        window.removeEventListener('message', handlePopupMessage);
+        if (authWindow && !authWindow.closed) {
+          authWindow.close();
+        }
+      };
+      
+      // Set a timeout to cleanup if the process takes too long
+      setTimeout(() => {
+        if (authLoading) {
+          console.log('OAuth process timed out');
+          cleanup();
+          setAuthLoading(false);
+        }
+      }, 300000); // 5 minutes timeout
+      
+    } else {
+      console.error('No auth URL received from backend');
       setAuthLoading(false);
     }
-  };
+  } catch (error) {
+    console.error('Error getting auth URL:', error);
+    setAuthLoading(false);
+  }
+};
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
