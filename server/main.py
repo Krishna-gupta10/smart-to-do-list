@@ -164,7 +164,7 @@ def oauth2callback_get(request: Request):
                         window.opener.postMessage({ 
                             type: 'oauth_success',
                             data: { authorized: true }
-                        }, '*');
+                        }, 'https://smart-to-do-list-4bi2.onrender.com');
                     } else {
                         console.log('No parent window found or parent window is closed');
                     }
