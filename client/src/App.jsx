@@ -29,19 +29,34 @@ function App() {
     setCheckingAuth(false);
   };
 
-  const handleAuthorize = () => {
-    const authWindow = window.open(`${process.env.REACT_APP_API_BASE_URL}/authorize`, '_blank', 'width=600,height=700');
-    
-    // Poll for window closure
-    const checkClosed = setInterval(() => {
-      if (authWindow.closed) {
-        clearInterval(checkClosed);
-        // Check auth status after window closes
-        setTimeout(() => {
-          checkAuthStatus();
+  const handleAuthorize = async () => {
+    try {
+      // First, get the auth URL from your backend
+      const res = await fetch('https://smart-to-do-list-4bi2.onrender.com/authorize', {
+        method: 'GET',
+      });
+      const data = await res.json();
+      
+      if (data.auth_url) {
+        // Open the dynamic auth URL returned by your backend
+        const authWindow = window.open(data.auth_url, '_blank', 'width=600,height=700');
+        
+        // Poll for window closure
+        const checkClosed = setInterval(() => {
+          if (authWindow.closed) {
+            clearInterval(checkClosed);
+            // Check auth status after window closes
+            setTimeout(() => {
+              checkAuthStatus();
+            }, 1000);
+          }
         }, 1000);
+      } else {
+        console.error('No auth URL received from backend');
       }
-    }, 1000);
+    } catch (error) {
+      console.error('Error getting auth URL:', error);
+    }
   };
 
   const handleSubmit = async () => {
