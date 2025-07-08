@@ -41,9 +41,96 @@ def authorize():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get auth URL: {str(e)}")
 
+@app.get("/oauth2callback")
+def oauth2callback_get(request: Request):
+    """Handle OAuth callback with authorization code (GET request)"""
+    try:
+        code = request.query_params.get('code')
+        error = request.query_params.get('error')
+        
+        if error:
+            # Return error page
+            return HTMLResponse(f"""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Authorization Error</title></head>
+            <body>
+                <h2>Authorization Failed</h2>
+                <p>Error: {error}</p>
+                <script>
+                    setTimeout(() => window.close(), 3000);
+                </script>
+            </body>
+            </html>
+            """)
+        
+        if not code:
+            return HTMLResponse("""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Authorization Error</title></head>
+            <body>
+                <h2>Authorization Failed</h2>
+                <p>No authorization code received</p>
+                <script>
+                    setTimeout(() => window.close(), 3000);
+                </script>
+            </body>
+            </html>
+            """)
+        
+        # Exchange code for credentials
+        creds = exchange_code(code)
+        
+        # Return success page that closes the window
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Authorization Complete</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .success { color: #27ae60; }
+            </style>
+        </head>
+        <body>
+            <h2 class="success">✅ Authorization Successful!</h2>
+            <p>You can close this window and return to the app.</p>
+            <script>
+                // Notify parent window if opened as popup
+                if (window.opener) {
+                    window.opener.postMessage({ 
+                        type: 'oauth_success', 
+                        data: { authorized: true } 
+                    }, '*');
+                }
+                
+                // Auto-close after 2 seconds
+                setTimeout(() => window.close(), 2000);
+            </script>
+        </body>
+        </html>
+        """)
+        
+    except Exception as e:
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authorization Error</title></head>
+        <body>
+            <h2>Authorization Failed</h2>
+            <p>Error: {str(e)}</p>
+            <script>
+                setTimeout(() => window.close(), 3000);
+            </script>
+        </body>
+        </html>
+        """)
+
+# Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
-def oauth2callback(data: AuthCodeInput):
-    """Handle OAuth callback with authorization code"""
+def oauth2callback_post(data: AuthCodeInput):
+    """Handle OAuth callback with authorization code (POST request)"""
     try:
         creds = exchange_code(data.code)
         return {
