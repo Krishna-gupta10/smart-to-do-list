@@ -7,7 +7,7 @@ import re, json, os
 from datetime import datetime
 
 from utils.gemini import call_gemini
-from utils.google_auth import get_credentials, authorize_user
+from utils.google_auth import get_credentials
 from utils.calendar_task import (
     create_calendar_event,
     check_schedule,
