@@ -17,7 +17,7 @@ function App() {
 
   const checkAuthStatus = async () => {
     try {
-      const res = await fetch('http://localhost:8000/check-auth', {
+      const res = await fetch(`${process.env.REACT_APP_API_BASE_URL}/check-auth`, {
         method: 'GET',
       });
       const data = await res.json();
@@ -30,7 +30,7 @@ function App() {
   };
 
   const handleAuthorize = () => {
-    const authWindow = window.open('http://localhost:8000/authorize', '_blank', 'width=600,height=700');
+    const authWindow = window.open(`${process.env.REACT_APP_API_BASE_URL}/authorize`, '_blank', 'width=600,height=700');
     
     // Poll for window closure
     const checkClosed = setInterval(() => {
@@ -53,7 +53,7 @@ function App() {
     setLoading(true);
     
     try {
-      const res = await fetch('http://localhost:8000/parse-and-execute', {
+      const res = await fetch(`${process.env.REACT_APP_API_BASE_URL}/parse-and-execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -61,8 +61,8 @@ function App() {
         body: JSON.stringify({ task: prompt }),
       });
       const data = await res.json();
-      
-      const assistantMessage = { type: 'assistant', content: data };
+      const formattedResponse = formatMessage(data);
+      const assistantMessage = { type: 'assistant', content: formattedResponse };
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error:', error);
