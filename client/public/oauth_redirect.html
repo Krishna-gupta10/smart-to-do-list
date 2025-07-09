@@ -6,22 +6,38 @@
 </head>
 <body>
     <script>
-        // This script runs on the frontend's origin (e.g., http://localhost:5173)
-        // It receives the OAuth status from the backend via URL parameters
-        // and then relays it to the main window.
-
+        // Parse the URL parameters that were passed by the backend
         const params = new URLSearchParams(window.location.search);
         const type = params.get('type');
-        const authorized = params.get('authorized') === 'true';
         const error = params.get('error');
+        const authorized = params.get('authorized');
+        const details = params.get('details');
 
+        console.log('OAuth redirect received:', { type, error, authorized, details });
+
+        // Send the result back to the parent window
         if (window.opener) {
-            if (type === 'oauth_success') {
-                window.opener.postMessage({ type: 'oauth_success', data: { authorized: authorized } }, window.location.origin);
-            } else if (type === 'oauth_error') {
-                window.opener.postMessage({ type: 'oauth_error', error: error }, window.location.origin);
+            if (type === 'oauth_success' && authorized === 'true') {
+                window.opener.postMessage({ 
+                    type: 'oauth_success', 
+                    data: { authorized: true } 
+                }, window.location.origin);
+            } else if (type === 'oauth_error' || error) {
+                window.opener.postMessage({ 
+                    type: 'oauth_error', 
+                    error: error || 'Authentication failed',
+                    details: details 
+                }, window.location.origin);
+            } else {
+                // Fallback for unexpected scenarios
+                window.opener.postMessage({ 
+                    type: 'oauth_error', 
+                    error: 'Unexpected response format' 
+                }, window.location.origin);
             }
         }
+
+        // Close the popup window
         window.close();
     </script>
 </body>

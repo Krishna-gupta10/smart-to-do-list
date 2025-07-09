@@ -25,33 +25,40 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Listen for OAuth messages from popup
-  useEffect(() => {
+useEffect(() => {
     const handleMessage = (event) => {
-      const backendOrigin = new URL(API_BASE_URL).origin;
-      if (event.origin !== backendOrigin) {
-        return;
-      }
+        const backendOrigin = new URL(API_BASE_URL).origin;
+        
+        // Debug logging
+        console.log('Message received:', {
+            origin: event.origin,
+            backendOrigin,
+            data: event.data
+        });
+        
+        // For now, allow messages from the same origin too (for oauth_redirect.html)
+        if (event.origin !== backendOrigin && event.origin !== window.location.origin) {
+            console.log('Ignoring message from unexpected origin:', event.origin);
+            return;
+        }
 
-      if (event.data.type === 'oauth_success') {
-        console.log('OAuth success message received:', event.data);
-        setIsAuthorized(true);
-        setAuthLoading(false);
-        // Double-check auth status
-        setTimeout(() => {
-          checkAuthStatus();
-        }, 1000);
-      } else if (event.data.type === 'oauth_error') {
-        console.error('OAuth error:', event.data.error);
-        setAuthLoading(false);
-      }
+        if (event.data.type === 'oauth_success') {
+            console.log('OAuth success message received:', event.data);
+            setIsAuthorized(true);
+            setAuthLoading(false);
+            // Double-check auth status
+            setTimeout(() => {
+                checkAuthStatus();
+            }, 1000);
+        } else if (event.data.type === 'oauth_error') {
+            console.error('OAuth error:', event.data.error);
+            setAuthLoading(false);
+        }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [API_BASE_URL]);
-
-  
+}, [API_BASE_URL]);
 
   const checkAuthStatus = async () => {
     try {
