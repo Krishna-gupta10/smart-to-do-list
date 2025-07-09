@@ -50,6 +50,7 @@ function App() {
       console.log('Checking auth status...');
       const res = await fetch(`${API_BASE_URL}/check-auth`, {
         method: 'GET',
+        credentials: 'include',
       });
       const data = await res.json();
       console.log('Auth status response:', data);
@@ -81,7 +82,9 @@ function App() {
     
     try {
       const origin = window.location.origin;
-      const res = await fetch(`${API_BASE_URL}/authorize?origin=${encodeURIComponent(origin)}`);
+      const res = await fetch(`${API_BASE_URL}/authorize?origin=${encodeURIComponent(origin)}`, {
+        credentials: 'include',
+      });
       const data = await res.json();
       
       if (data.auth_url) {
@@ -127,6 +130,7 @@ function App() {
     try {
       await fetch(`${API_BASE_URL}/logout`, {
         method: 'POST',
+        credentials: 'include',
       });
       setIsAuthorized(false);
       setUserInfo(null);
@@ -150,6 +154,7 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ task: prompt }),
+        credentials: 'include',
       });
       
       if (res.status === 401) {
