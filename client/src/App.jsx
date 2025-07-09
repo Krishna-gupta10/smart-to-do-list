@@ -79,49 +79,53 @@ function App() {
   const handleAuthorize = async () => {
     setAuthLoading(true);
     console.log('Starting OAuth flow...');
-    
+
+    const authWindow = window.open(
+      '',
+      'oauth',
+      'width=600,height=700,scrollbars=yes,resizable=yes,left=' +
+      (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
+    );
+
+    if (!authWindow) {
+      console.error('Failed to open popup window. Please disable your popup blocker.');
+      setAuthLoading(false);
+      return;
+    }
+
     try {
       const origin = window.location.origin;
       const res = await fetch(`${API_BASE_URL}/authorize?origin=${encodeURIComponent(origin)}`, {
         credentials: 'include',
       });
       const data = await res.json();
-      
+
       if (data.auth_url) {
-        console.log('Opening OAuth popup...');
-        const authWindow = window.open(
-          data.auth_url, 
-          'oauth', 
-          'width=600,height=700,scrollbars=yes,resizable=yes,left=' + 
-          (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
-        );
-        
-        if (!authWindow) {
-          console.error('Failed to open popup window');
-          setAuthLoading(false);
-          return;
-        }
-        
-        // Poll for window closure as a fallback
-        const checkClosed = setInterval(() => {
-          if (authWindow.closed) {
-            console.log('Popup window closed');
-            clearInterval(checkClosed);
-            setAuthLoading(false);
-            
-            // Check auth status after window closes (fallback)
-            setTimeout(() => {
-              checkAuthStatus();
-            }, 1000);
-          }
-        }, 1000);
-        
+        console.log('Redirecting popup to OAuth URL...');
+        authWindow.location.href = data.auth_url;
       } else {
         console.error('No auth URL received from backend');
+        authWindow.close();
         setAuthLoading(false);
       }
+
+      // Poll for window closure as a fallback
+      const checkClosed = setInterval(() => {
+        if (authWindow.closed) {
+          console.log('Popup window closed');
+          clearInterval(checkClosed);
+          setAuthLoading(false);
+
+          // Check auth status after window closes (fallback)
+          setTimeout(() => {
+            checkAuthStatus();
+          }, 1000);
+        }
+      }, 1000);
+
     } catch (error) {
       console.error('Error getting auth URL:', error);
+      authWindow.close();
       setAuthLoading(false);
     }
   };
