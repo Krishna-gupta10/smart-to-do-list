@@ -172,15 +172,15 @@ def oauth2callback_get(request: Request):
         
         response = HTMLResponse(content=html_response_content)
         
-        # FIXED: Proper cookie configuration for cross-origin
         response.set_cookie(
             "auth_token",
             jwt_token,
             max_age=JWT_EXPIRATION_HOURS * 3600,
             httponly=True,
-            secure=True,  # Required for HTTPS
-            samesite="none",  # CRITICAL: Changed from "lax" to "none" for cross-origin
-            domain=None  # Let browser handle domain
+            secure=True,  
+            samesite="none",  
+            domain=None,
+            path="/"  
         )
         
         logger.info("JWT token created and set in cookie successfully.")
@@ -258,16 +258,16 @@ def logout(request: Request):
         
         response = JSONResponse(content={"message": "Logged out successfully"})
         
-        # Clear the cookie with the same settings used when setting it
         response.set_cookie(
             "auth_token",
             "",
-            max_age=0,  # Expire immediately
+            max_age=0,  
             httponly=True,
             secure=True,
             samesite="none",
-            domain=None
-        )
+            domain=None,
+            path="/"
+            )
         
         return response
     except Exception as e:
