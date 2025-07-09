@@ -63,52 +63,65 @@ def authorize(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get auth URL: {str(e)}")
 
-def create_response(origin, params):
-    """Helper to create a redirect response with required headers"""
-    # Always allow popups from the same origin
-    headers = {"Cross-Origin-Opener-Policy": "same-origin-allow-popups"}
-    # Construct URL with query parameters
-    query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
-    url = f"{origin}/oauth_redirect.html?{query_string}"
-    return RedirectResponse(url=url, headers=headers)
+
 
 @app.get("/oauth2callback")
 def oauth2callback_get(request: Request):
-    """Handle OAuth callback with authorization code (GET request)"""
+    """Handle OAuth callback, exchange code, and close the popup."""
     auth_state = request.session.get("auth_state", {})
     origin = auth_state.get("origin")
+    code = request.query_params.get('code')
+    error = request.query_params.get('error')
 
-    # Fallback for origin if not in session (e.g., during development)
-    if not origin:
-        origin = "http://localhost:5173"  # Default to Vite dev server
+    logger.info(f"OAuth callback received: code={code is not None}, error={error}, origin={origin}")
+
+    html_response_content = """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Authentication Complete</title></head>
+    <body>
+        <script>
+            const params = new URLSearchParams(window.location.search);
+            const message = {
+                type: params.get('error') ? 'oauth_error' : 'oauth_success',
+                authorized: params.get('error') ? 'false' : 'true',
+                error: params.get('error'),
+                details: params.get('details')
+            };
+            // Send message to the main window
+            if (window.opener) {
+                window.opener.postMessage(message, "*"); // Use specific origin in production
+            }
+            // Close the popup
+            window.close();
+        </script>
+        <p>Authentication successful. You can close this window.</p>
+    </body>
+    </html>
+    """
+
+    if error:
+        logger.error(f"OAuth error from Google: {error}")
+        # Even on error, we redirect to ourself to run the postMessage script
+        error_params = f"?error={error}"
+        return RedirectResponse(url=f"/oauth2callback{error_params}")
+
+    if not code:
+        logger.error("No authorization code received.")
+        return HTMLResponse(content="<html><body>Error: No authorization code received.</body></html>", status_code=400)
 
     try:
-        code = request.query_params.get('code')
-        error = request.query_params.get('error')
-
-        logger.info(f"oauth2callback_get received - code: {code}, error: {error}, origin: {origin}")
-
-        if error:
-            logger.error(f"OAuth error received: {error}")
-            return create_response(origin, {"type": "oauth_error", "error": error})
-
-        if not code:
-            logger.error("No code received in oauth2callback")
-            return create_response(origin, {"type": "oauth_error", "error": "no_code_received"})
-
-        try:
-            creds = exchange_code(code, origin)
-            logger.info(f"Credentials exchanged successfully")
-            request.session["credentials"] = creds.to_json()
-            return create_response(origin, {"type": "oauth_success", "authorized": "true"})
-
-        except Exception as auth_error:
-            logger.error(f"Authentication failed during code exchange: {str(auth_error)}")
-            return create_response(origin, {"type": "oauth_error", "error": "authentication_failed", "details": str(auth_error)})
+        logger.info("Exchanging authorization code for credentials...")
+        creds = exchange_code(code, origin)
+        request.session["credentials"] = creds.to_json()
+        logger.info("Credentials stored in session successfully.")
+        return HTMLResponse(content=html_response_content)
 
     except Exception as e:
-        logger.error(f"Unexpected error in oauth2callback_get: {str(e)}")
-        return create_response(origin, {"type": "oauth_error", "error": "unexpected_error", "details": str(e)})
+        logger.error(f"Failed to exchange code for credentials: {str(e)}")
+        # Pass error info to the popup's script
+        error_params = f"?error=token_exchange_failed&details={str(e)}"
+        return RedirectResponse(url=f"/oauth2callback{error_params}")
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")

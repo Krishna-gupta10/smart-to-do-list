@@ -27,38 +27,34 @@ function App() {
 
 useEffect(() => {
     const handleMessage = (event) => {
-        const backendOrigin = new URL(API_BASE_URL).origin;
-        
-        // Debug logging
-        console.log('Message received:', {
-            origin: event.origin,
-            backendOrigin,
-            data: event.data
-        });
-        
-        // For now, allow messages from the same origin too (for oauth_redirect.html)
-        if (event.origin !== backendOrigin && event.origin !== window.location.origin) {
-            console.log('Ignoring message from unexpected origin:', event.origin);
-            return;
-        }
+      // IMPORTANT: Check the origin for security
+      const backendOrigin = new URL(API_BASE_URL).origin;
+      if (event.origin !== window.location.origin && event.origin !== backendOrigin) {
+        console.warn(`Ignoring message from unexpected origin: ${event.origin}`);
+        return;
+      }
 
-        if (event.data.type === 'oauth_success') {
-            console.log('OAuth success message received:', event.data);
-            setIsAuthorized(true);
-            setAuthLoading(false);
-            // Double-check auth status
-            setTimeout(() => {
-                checkAuthStatus();
-            }, 1000);
-        } else if (event.data.type === 'oauth_error') {
-            console.error('OAuth error:', event.data.error);
-            setAuthLoading(false);
-        }
+      const { type, authorized, error, details } = event.data;
+
+      if (type === 'oauth_success' && authorized === 'true') {
+        console.log('OAuth successful, closing popup and checking status...');
+        setIsAuthorized(true);
+        setAuthLoading(false);
+        // The popup is closed by the redirect page itself.
+        // Now, let's verify the auth status with the backend.
+        setTimeout(checkAuthStatus, 500); // Give a moment for session to be set
+      } else if (type === 'oauth_error') {
+        console.error('OAuth Error:', { error, details });
+        setAuthLoading(false);
+        // Optionally, display a user-friendly error message
+      }
     };
 
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-}, [API_BASE_URL]);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [API_BASE_URL]);
 
   const checkAuthStatus = async () => {
     try {
@@ -95,19 +91,6 @@ useEffect(() => {
     setAuthLoading(true);
     console.log('Starting OAuth flow...');
 
-    const authWindow = window.open(
-      '',
-      'oauth',
-      'width=600,height=700,scrollbars=yes,resizable=yes,left=' +
-      (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
-    );
-
-    if (!authWindow) {
-      console.error('Failed to open popup window. Please disable your popup blocker.');
-      setAuthLoading(false);
-      return;
-    }
-
     try {
       const origin = window.location.origin;
       const res = await fetch(`${API_BASE_URL}/authorize?origin=${encodeURIComponent(origin)}`, {
@@ -118,7 +101,7 @@ useEffect(() => {
       if (data.auth_url) {
         console.log('Opening OAuth popup to:', data.auth_url);
         const authWindow = window.open(
-          data.auth_url, // Open the URL directly
+          data.auth_url,
           'oauth',
           'width=600,height=700,scrollbars=yes,resizable=yes,left=' +
           (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
@@ -130,18 +113,18 @@ useEffect(() => {
           return;
         }
 
-        // Poll for window closure as a fallback (keep this)
+        // Poll for window closure as a fallback
         const checkClosed = setInterval(() => {
           if (authWindow.closed) {
-            console.log('Popup window closed');
+            console.log('Popup window closed by user.');
             clearInterval(checkClosed);
             setAuthLoading(false);
-            setTimeout(() => {
-              checkAuthStatus();
-            }, 1000);
+            // Check status in case the user authorized but closed the window manually
+            setTimeout(checkAuthStatus, 500);
           }
         }, 1000);
-      } else { // <--- Added closing brace for if (data.auth_url) and else block
+
+      } else {
         console.error('No auth URL received from backend');
         setAuthLoading(false);
       }

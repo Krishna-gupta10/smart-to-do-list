@@ -5,6 +5,9 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +23,8 @@ SCOPES = [
 ]
 
 CLIENT_SECRETS_FILE = "credentials.json"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+REDIRECT_URI = f"{API_BASE_URL}/oauth2callback"
 
 def get_auth_url(origin: str):
     """Generate Google OAuth authorization URL"""
@@ -27,13 +32,10 @@ def get_auth_url(origin: str):
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
         
-        # Use the origin from the frontend to construct the redirect_uri
-        redirect_uri = f"{origin}/oauth_redirect.html"
-        
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=SCOPES,
-            redirect_uri=redirect_uri
+            redirect_uri=REDIRECT_URI
         )
         
         auth_url, state = flow.authorization_url(
@@ -57,15 +59,13 @@ def exchange_code(code, origin: str):
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
 
-        redirect_uri = f"{origin}/oauth_redirect.html"
-
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=SCOPES,
-            redirect_uri=redirect_uri
+            redirect_uri=REDIRECT_URI
         )
 
-        logger.info(f"Attempting to fetch token with redirect_uri: {redirect_uri}")
+        logger.info(f"Attempting to fetch token with redirect_uri: {REDIRECT_URI}")
         try:
             flow.fetch_token(code=code)
         except Exception as e:
