@@ -251,15 +251,23 @@ def parse_and_execute(request: Request, data: TaskInput):
         raw_response = call_gemini(data.task)
 
         # Check if Gemini responded with a JSON task
-        if "{{" in raw_response: 
+        if "{" in raw_response:
             try:
-                json_str = re.search(r"\{{.*\}}", raw_response, re.DOTALL)[0]
+                # Extract JSON string from the raw response
+                match = re.search(r"\{.*\}", raw_response, re.DOTALL)
+                if not match:
+                    # Fallback if no JSON is found
+                    return {{"status": "Processed ✅", "message": raw_response}}
+
+                json_str = match.group(0)
                 parsed = json.loads(json_str)
-                
+
                 if parsed.get("missing_fields"):
+                    # Properly format the list of missing fields
+                    missing_fields_str = ', '.join(parsed['missing_fields'])
                     return {{
                         "status": "Need Info ❓",
-                        "message": f"To proceed, I need: {{', '.join(parsed['missing_fields'])}}.",
+                        "message": f"To proceed, I need: {{missing_fields_str}}.",
                         "parsed": parsed
                     }}
                 
