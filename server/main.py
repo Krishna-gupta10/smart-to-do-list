@@ -58,36 +58,45 @@ def authorize(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get auth URL: {str(e)}")
 
+def create_response(origin, params):
+    """Helper to create a redirect response with required headers"""
+    # Always allow popups from the same origin
+    headers = {"Cross-Origin-Opener-Policy": "same-origin-allow-popups"}
+    # Construct URL with query parameters
+    query_string = '&'.join([f"{k}={v}" for k, v in params.items()])
+    url = f"{origin}/oauth_redirect.html?{query_string}"
+    return RedirectResponse(url=url, headers=headers)
+
 @app.get("/oauth2callback")
 def oauth2callback_get(request: Request):
     """Handle OAuth callback with authorization code (GET request)"""
-    # Safely get origin from session
     auth_state = request.session.get("auth_state", {})
-    origin = auth_state.get("origin", "https://smart-to-do-list-4bi2.onrender.com")
+    origin = auth_state.get("origin")
+
+    # Fallback for origin if not in session (e.g., during development)
+    if not origin:
+        origin = "http://localhost:5173"  # Default to Vite dev server
 
     try:
         code = request.query_params.get('code')
         error = request.query_params.get('error')
 
         if error:
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error={error}", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
+            return create_response(origin, {"type": "oauth_error", "error": error})
 
         if not code:
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=no_code_received", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
+            return create_response(origin, {"type": "oauth_error", "error": "no_code_received"})
 
-        # Exchange code for credentials
         try:
             creds = exchange_code(code, origin)
             request.session["credentials"] = creds.to_json()
-
-            # Redirect to success page
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_success&authorized=true", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
+            return create_response(origin, {"type": "oauth_success", "authorized": "true"})
 
         except Exception as auth_error:
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=authentication_failed&details={str(auth_error)}", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
+            return create_response(origin, {"type": "oauth_error", "error": "authentication_failed", "details": str(auth_error)})
 
     except Exception as e:
-        return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=unexpected_error&details={str(e)}", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
+        return create_response(origin, {"type": "oauth_error", "error": "unexpected_error", "details": str(e)})
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
