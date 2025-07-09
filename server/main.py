@@ -41,7 +41,7 @@ app.add_middleware(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://smart-to-do-list-4bi2.onrender.com"],
+    allow_origins=["http://localhost:5173", "https://smart-to-do-list-yy8z.onrender.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
