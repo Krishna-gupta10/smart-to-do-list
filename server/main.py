@@ -37,7 +37,10 @@ if not SECRET_KEY:
 # Add session middleware BEFORE CORS middleware
 app.add_middleware(
     SessionMiddleware,
-    secret_key=SECRET_KEY
+    secret_key=SECRET_KEY,
+    max_age=86400,  # 24 hours
+    same_site="lax",
+    https_only=True  # Since you're on HTTPS
 )
 
 app.add_middleware(
