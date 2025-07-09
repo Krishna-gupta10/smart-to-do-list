@@ -21,18 +21,19 @@ SCOPES = [
 
 CLIENT_SECRETS_FILE = "credentials.json"
 
-REDIRECT_URI = "https://smart-to-do-list-4bi2.onrender.com/oauth2callback"
-
-def get_auth_url(origin: str = None):
+def get_auth_url(origin: str):
     """Generate Google OAuth authorization URL"""
     try:
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
         
+        # TODO: Use a more dynamic way to set the redirect_uri for production
+        redirect_uri = f"http://localhost:8000/oauth2callback"
+        
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=SCOPES,
-            redirect_uri=REDIRECT_URI
+            redirect_uri=redirect_uri
         )
         
         auth_url, state = flow.authorization_url(
@@ -48,7 +49,7 @@ def get_auth_url(origin: str = None):
         logger.error(f"Error generating auth URL: {str(e)}")
         raise
 
-def exchange_code(code):
+def exchange_code(code, origin: str):
     """Exchange authorization code for credentials"""
     try:
         logger.info(f"Exchanging code for credentials...")
@@ -56,10 +57,13 @@ def exchange_code(code):
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
         
+        # TODO: Use a more dynamic way to set the redirect_uri for production
+        redirect_uri = f"http://localhost:8000/oauth2callback"
+        
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
             scopes=SCOPES,
-            redirect_uri=REDIRECT_URI
+            redirect_uri=redirect_uri
         )
         
         logger.info("Fetching token...")

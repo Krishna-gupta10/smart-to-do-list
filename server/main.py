@@ -65,64 +65,29 @@ def oauth2callback_get(request: Request):
     auth_state = request.session.get("auth_state", {})
     origin = auth_state.get("origin", "https://smart-to-do-list-4bi2.onrender.com")
 
-    def create_response(error_message):
-        return HTMLResponse(f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Authorization Status</title></head>
-        <body>
-            <script>
-                if (window.opener) {{
-                    window.opener.postMessage({{ 
-                        type: 'oauth_error', 
-                        error: '{error_message}' 
-                    }}, '{origin}');
-                }}
-                window.close();
-            </script>
-        </body>
-        </html>
-        """)
-
     try:
         code = request.query_params.get('code')
         error = request.query_params.get('error')
 
         if error:
-            return create_response(error)
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error={error}")
 
         if not code:
-            return create_response('No authorization code received')
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=no_code_received")
 
         # Exchange code for credentials
         try:
-            creds = exchange_code(code)
+            creds = exchange_code(code, origin)
             request.session["credentials"] = creds.to_json()
 
-            # Return success page
-            return HTMLResponse(f"""
-            <!DOCTYPE html>
-            <html>
-            <head><title>Authorization Complete</title></head>
-            <body>
-                <script>
-                    if (window.opener && !window.opener.closed) {{
-                        window.opener.postMessage({{ 
-                            type: 'oauth_success',
-                            data: {{ authorized: true }}
-                        }}, '{origin}');
-                    }}
-                    window.close();
-                </script>
-            </body>
-            </html>
-            """)
+            # Redirect to success page
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_success&authorized=true")
 
         except Exception as auth_error:
-            return create_response(f'Authentication failed: {str(auth_error)}')
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=authentication_failed&details={str(auth_error)}")
 
     except Exception as e:
-        return create_response(f'Unexpected error: {str(e)}')
+        return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=unexpected_error&details={str(e)}")
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
@@ -185,6 +150,7 @@ def parse_and_execute(request: Request, data: TaskInput):
 
     try:
         raw_response = call_gemini(data.task)
+        print(f"Raw response from Gemini: {raw_response}")
 
         # Check if Gemini responded with a JSON task
         if "{" in raw_response:
@@ -297,7 +263,7 @@ def parse_and_execute(request: Request, data: TaskInput):
         
         else:
             # Fallback for non-JSON responses
-            return {"status": "Processed ✅", "message": raw_response}
+            return {"status": "Message 💬", "message": raw_response}
 
     except HTTPException as e:
         raise e
