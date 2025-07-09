@@ -371,7 +371,7 @@ def parse_and_execute(request: Request, data: TaskInput):
 @app.get("/")
 def root():
     """Root endpoint"""
-    return {{"message": "Smart To-Do List API is running"}}
+    return {"message": "Smart To-Do List API is running"}
 
 @app.get("/health")
 def health_check():
