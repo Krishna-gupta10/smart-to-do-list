@@ -61,77 +61,51 @@ def authorize(request: Request):
 @app.get("/oauth2callback")
 def oauth2callback_get(request: Request):
     """Handle OAuth callback with authorization code (GET request)"""
+    # Safely get origin from session
+    auth_state = request.session.get("auth_state", {})
+    origin = auth_state.get("origin", "https://smart-to-do-list-4bi2.onrender.com")
+
+    def create_response(error_message):
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authorization Status</title></head>
+        <body>
+            <script>
+                if (window.opener) {{
+                    window.opener.postMessage({{ 
+                        type: 'oauth_error', 
+                        error: '{error_message}' 
+                    }}, '{origin}');
+                }}
+                window.close();
+            </script>
+        </body>
+        </html>
+        """)
+
     try:
-        # Get state from session
-        auth_state = request.session.get("auth_state")
-        
-        # Get origin from state
-        origin = auth_state.get("origin") if auth_state else "https://smart-to-do-list-4bi2.onrender.com"
-        
         code = request.query_params.get('code')
         error = request.query_params.get('error')
-        
+
         if error:
-            # Return error page that notifies parent
-            return HTMLResponse(f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Authorization Error</title>
-            </head>
-            <body>
-                <script>
-                    // Notify parent window about the error
-                    if (window.opener) {{
-                        window.opener.postMessage({{ 
-                            type: 'oauth_error', 
-                            error: '{error}' 
-                        }}, '{origin}');
-                    }}
-                    window.close();
-                </script>
-            </body>
-            </html>
-            """)
-        
+            return create_response(error)
+
         if not code:
-            return HTMLResponse(f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Authorization Error</title>
-            </head>
-            <body>
-                <script>
-                    if (window.opener) {{
-                        window.opener.postMessage({{ 
-                            type: 'oauth_error', 
-                            error: 'No authorization code received' 
-                        }}, '{origin}');
-                    }}
-                    window.close();
-                </script>
-            </body>
-            </html>
-            """)
-        
+            return create_response('No authorization code received')
+
         # Exchange code for credentials
         try:
             creds = exchange_code(code)
-            
-            # Store credentials in session
             request.session["credentials"] = creds.to_json()
-            
-            # Return success page that properly notifies parent and closes
+
+            # Return success page
             return HTMLResponse(f"""
             <!DOCTYPE html>
             <html>
-            <head>
-                <title>Authorization Complete</title>
-            </head>
+            <head><title>Authorization Complete</title></head>
             <body>
                 <script>
-                    // Notify parent window with success message
                     if (window.opener && !window.opener.closed) {{
                         window.opener.postMessage({{ 
                             type: 'oauth_success',
@@ -143,50 +117,12 @@ def oauth2callback_get(request: Request):
             </body>
             </html>
             """)
-            
+
         except Exception as auth_error:
-            return HTMLResponse(f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Authorization Error</title>
-            </head>
-            <body>
-                <script>
-                    // Notify parent window about the error
-                    if (window.opener) {{
-                        window.opener.postMessage({{ 
-                            type: 'oauth_error', 
-                            error: 'Authentication failed: {str(auth_error)}' 
-                        }}, '{origin}');
-                    }}
-                    window.close();
-                </script>
-            </body>
-            </html>
-            """)
-        
+            return create_response(f'Authentication failed: {str(auth_error)}')
+
     except Exception as e:
-        return HTMLResponse(f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Authorization Error</title>
-        </head>
-        <body>
-            <script>
-                // Notify parent window about the error
-                if (window.opener) {{
-                    window.opener.postMessage({{ 
-                        type: 'oauth_error', 
-                        error: 'Unexpected error: {str(e)}' 
-                    }}, 'https://smart-to-do-list-4bi2.onrender.com');
-                }}
-                window.close();
-            </script>
-        </body>
-        </html>
-        """)
+        return create_response(f'Unexpected error: {str(e)}')
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
