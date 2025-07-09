@@ -198,10 +198,10 @@ def oauth2callback_post(request: Request, data: AuthCodeInput):
         # Store credentials in session
         request.session["credentials"] = creds.to_json()
         
-        return {{
+        return {
             "message": "Authorization successful",
             "authorized": True
-        }}
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Authorization failed: {str(e)}")
 
@@ -211,20 +211,20 @@ def check_auth(request: Request):
     try:
         creds = get_credentials(request.session)
         if not creds or not creds.valid:
-            return {{"authorized": False, "error": "Invalid credentials"}}
+            return {"authorized": False, "error": "Invalid credentials"}
 
         # Fetch user info
         service = build('oauth2', 'v2', credentials=creds)
         user_info = service.userinfo().get().execute()
         
-        return {{
+        return {
             "authorized": True,
             "name": user_info.get("name"),
             "email": user_info.get("email"),
             "picture": user_info.get("picture")
-        }}
+        }
     except Exception as e:
-        return {{"authorized": False, "error": str(e)}}
+        return {"authorized": False, "error": str(e)}
 
 @app.post("/logout")
 def logout(request: Request):
@@ -232,7 +232,7 @@ def logout(request: Request):
     try:
         if "credentials" in request.session:
             del request.session["credentials"]
-        return {{"message": "Logged out successfully"}}
+        return {"message": "Logged out successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
@@ -257,7 +257,7 @@ def parse_and_execute(request: Request, data: TaskInput):
                 match = re.search(r"\{.*\}", raw_response, re.DOTALL)
                 if not match:
                     # Fallback if no JSON is found
-                    return {{"status": "Processed ✅", "message": raw_response}}
+                    return {"status": "Processed ✅", "message": raw_response}
 
                 json_str = match.group(0)
                 parsed = json.loads(json_str)
@@ -265,11 +265,11 @@ def parse_and_execute(request: Request, data: TaskInput):
                 if parsed.get("missing_fields"):
                     # Properly format the list of missing fields
                     missing_fields_str = ', '.join(parsed['missing_fields'])
-                    return {{
+                    return {
                         "status": "Need Info ❓",
-                        "message": f"To proceed, I need: {{missing_fields_str}}.",
+                        "message": f"To proceed, I need: {missing_fields_str}.",
                         "parsed": parsed
-                    }}
+                    }
                 
                 # 1. Schedule Call
                 if parsed["action"] == "schedule_call":
@@ -290,30 +290,30 @@ def parse_and_execute(request: Request, data: TaskInput):
                     if email:
                         message += f" Invite sent to {email}."
 
-                    return {{
+                    return {
                         "status": "Scheduled ✅",
                         "event": event_link,
                         "parsed": parsed,
                         "message": message
-                    }}
+                    }
 
                 # 2. Check Schedule
                 elif parsed["action"] == "check_schedule":
                     schedule = check_schedule(creds, parsed["date_time"])
-                    return {{
+                    return {
                         "status": "Schedule ✅",
                         "events": schedule,
                         "parsed": parsed
-                    }}
+                    }
 
                 # 3. Check Availability
                 elif parsed["action"] == "check_availability":
                     free_slots = check_availability(creds, parsed["date_time"])
-                    return {{
+                    return {
                         "status": "Free Slots ✅",
                         "slots": free_slots,
                         "parsed": parsed
-                    }}
+                    }
 
                 # 4. Summarize Emails
                 elif parsed["action"] == "summarize_emails":
@@ -322,46 +322,46 @@ def parse_and_execute(request: Request, data: TaskInput):
                         parsed.get("date_time"),
                         parsed.get("query")
                     )
-                    return {{
+                    return {
                         "status": "Summary ✅",
                         "emails": emails,
                         "parsed": parsed
-                    }}
+                    }
 
                 # 5. Send Email
                 elif parsed["action"] == "send_email":
                     result = send_email(creds, parsed["email"], parsed["subject"], parsed["body"])
-                    return {{
+                    return {
                         "status": "Email Sent ✅",
                         "result": result,
                         "parsed": parsed
-                    }}
+                    }
 
                 # 6. List Unread Emails
                 elif parsed["action"] == "list_unread":
                     emails = list_unread(creds, parsed["date_time"])
-                    return {{
+                    return {
                         "status": "Unread ✅",
                         "emails": emails,
                         "parsed": parsed
-                    }}
+                    }
 
                 # 7. Search Email
                 elif parsed["action"] == "search_email":
                     emails = search_email(creds, parsed["query"])
-                    return {{
+                    return {
                         "status": "Search ✅",
                         "emails": emails,
                         "parsed": parsed
-                    }}
+                    }
 
             except (json.JSONDecodeError, KeyError) as e:
                 # Fallback for parsing errors
-                return {{"status": "Error ❌", "error": f"Failed to parse action: {e}"}}
+                return {"status": "Error ❌", "error": f"Failed to parse action: {e}"}
         
         else:
             # Fallback for non-JSON responses
-            return {{"status": "Processed ✅", "message": raw_response}}
+            return {"status": "Processed ✅", "message": raw_response}
 
     except HTTPException as e:
         raise e
@@ -376,4 +376,4 @@ def root():
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
-    return {{"status": "healthy"}}
+    return {"status": "healthy"}
