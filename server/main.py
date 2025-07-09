@@ -1,17 +1,16 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Cookie
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import re, json, os, secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
-from fastapi.middleware.cors import CORSMiddleware
-
+import jwt
+from typing import Optional
 
 from utils.gemini import call_gemini
-from utils.google_auth import get_credentials, get_auth_url, exchange_code
+from utils.google_auth import get_credentials_from_token, get_auth_url, exchange_code
 from googleapiclient.discovery import build
 from utils.calendar_task import (
     create_calendar_event,
@@ -22,27 +21,22 @@ from utils.gmail_task import summarize_emails, send_email, list_unread, search_e
 
 load_dotenv()
 
-# Set up logging - ADD THIS
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Use a persistent secret key from environment variables
+# JWT Configuration
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
-    logger.warning("SECRET_KEY not found in environment variables. Using a temporary key. Sessions will not persist across server restarts.")
+    logger.warning("SECRET_KEY not found in environment variables. Using a temporary key.")
     SECRET_KEY = secrets.token_hex(32)
 
-# Add session middleware BEFORE CORS middleware
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=SECRET_KEY,
-    max_age=86400,  # 24 hours
-    same_site="lax",
-    https_only=True  # Since you're on HTTPS
-)
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
 
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://evernote-ai.netlify.app", "http://localhost:5173", "https://smart-to-do-list-yy8z.onrender.com"],
@@ -57,6 +51,47 @@ class TaskInput(BaseModel):
 class AuthCodeInput(BaseModel):
     code: str
 
+def create_jwt_token(credentials_json: str) -> str:
+    """Create JWT token containing credentials"""
+    payload = {
+        "credentials": credentials_json,
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+def verify_jwt_token(token: str) -> Optional[str]:
+    """Verify JWT token and return credentials JSON"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        return payload.get("credentials")
+    except jwt.ExpiredSignatureError:
+        logger.info("JWT token expired")
+        return None
+    except jwt.InvalidTokenError:
+        logger.info("Invalid JWT token")
+        return None
+
+def get_credentials_from_request(request: Request) -> Optional:
+    """Get credentials from JWT token in request"""
+    # Try to get token from cookie
+    auth_token = request.cookies.get("auth_token")
+    
+    if not auth_token:
+        # Try to get from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            auth_token = auth_header.split(" ")[1]
+    
+    if not auth_token:
+        return None
+    
+    credentials_json = verify_jwt_token(auth_token)
+    if not credentials_json:
+        return None
+    
+    return get_credentials_from_token(credentials_json)
+
 @app.get("/authorize")
 def authorize(request: Request):
     """Get Google OAuth authorization URL"""
@@ -64,56 +99,42 @@ def authorize(request: Request):
         origin = request.query_params.get("origin")
         auth_url, state = get_auth_url(origin=origin)
         
-        # Store the origin in the session with the state
-        request.session["auth_state"] = {"state": state, "origin": origin}
-        
         return {"auth_url": auth_url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get auth URL: {str(e)}")
 
-
-
 @app.get("/oauth2callback")
 def oauth2callback_get(request: Request):
     """Handle OAuth callback, exchange code, and close the popup."""
-    auth_state = request.session.get("auth_state", {})
-    origin = auth_state.get("origin")
     code = request.query_params.get('code')
     error = request.query_params.get('error')
+    origin = request.query_params.get('origin')
 
     logger.info(f"OAuth callback received: code={code is not None}, error={error}, origin={origin}")
 
-    html_response_content = """
-    <!DOCTYPE html>
-    <html>
-    <head><title>Authentication Complete</title></head>
-    <body>
-        <script>
-            const params = new URLSearchParams(window.location.search);
-            const message = {
-                type: params.get('error') ? 'oauth_error' : 'oauth_success',
-                authorized: params.get('error') ? 'false' : 'true',
-                error: params.get('error'),
-                details: params.get('details')
-            };
-            // Send message to the main window
-            if (window.opener) {
-                window.opener.postMessage(message, "*"); // Use specific origin in production
-            }
-            // Close the popup
-            window.close();
-        </script>
-        <p>Authentication successful. You can close this window.</p>
-    </body>
-    </html>
-    """
-
     if error:
         logger.error(f"OAuth error from Google: {error}")
-        # Construct the full redirect URL
-        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
-        redirect_url = f"{api_base_url}/oauth2callback?error={error}"
-        return RedirectResponse(url=redirect_url)
+        html_response_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authentication Error</title></head>
+        <body>
+            <script>
+                const message = {{
+                    type: 'oauth_error',
+                    authorized: 'false',
+                    error: '{error}'
+                }};
+                if (window.opener) {{
+                    window.opener.postMessage(message, "*");
+                }}
+                window.close();
+            </script>
+            <p>Authentication failed: {error}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_response_content)
 
     if not code:
         logger.error("No authorization code received.")
@@ -122,31 +143,81 @@ def oauth2callback_get(request: Request):
     try:
         logger.info("Exchanging authorization code for credentials...")
         creds = exchange_code(code, origin)
-        request.session["credentials"] = creds.to_json()
-        logger.info("Credentials stored in session successfully.")
-        return HTMLResponse(content=html_response_content)
+        
+        # Create JWT token
+        jwt_token = create_jwt_token(creds.to_json())
+        
+        html_response_content = """
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authentication Complete</title></head>
+        <body>
+            <script>
+                const message = {
+                    type: 'oauth_success',
+                    authorized: 'true'
+                };
+                if (window.opener) {
+                    window.opener.postMessage(message, "*");
+                }
+                window.close();
+            </script>
+            <p>Authentication successful. You can close this window.</p>
+        </body>
+        </html>
+        """
+        
+        response = HTMLResponse(content=html_response_content)
+        response.set_cookie(
+            "auth_token",
+            jwt_token,
+            max_age=JWT_EXPIRATION_HOURS * 3600,  # Convert hours to seconds
+            httponly=True,
+            secure=True,
+            samesite="lax"
+        )
+        
+        logger.info("JWT token created and set in cookie successfully.")
+        return response
 
     except Exception as e:
         logger.error(f"Failed to exchange code for credentials: {str(e)}")
-        # Construct the full redirect URL for the error case
-        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
-        error_details = str(e).replace('"', '\'"') # Basic escaping for URL
-        redirect_url = f"{api_base_url}/oauth2callback?error=token_exchange_failed&details={error_details}"
-        return RedirectResponse(url=redirect_url)
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authentication Error</title></head>
+        <body>
+            <script>
+                const message = {{
+                    type: 'oauth_error',
+                    authorized: 'false',
+                    error: 'token_exchange_failed',
+                    details: '{str(e)}'
+                }};
+                if (window.opener) {{
+                    window.opener.postMessage(message, "*");
+                }}
+                window.close();
+            </script>
+            <p>Authentication failed: {str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=400)
 
-# Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
 def oauth2callback_post(request: Request, data: AuthCodeInput):
     """Handle OAuth callback with authorization code (POST request)"""
     try:
-        creds = exchange_code(data.code)
+        creds = exchange_code(data.code, None)
         
-        # Store credentials in session
-        request.session["credentials"] = creds.to_json()
+        # Create JWT token
+        jwt_token = create_jwt_token(creds.to_json())
         
         return {
             "message": "Authorization successful",
-            "authorized": True
+            "authorized": True,
+            "token": jwt_token
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Authorization failed: {str(e)}")
@@ -155,7 +226,7 @@ def oauth2callback_post(request: Request, data: AuthCodeInput):
 def check_auth(request: Request):
     """Check if user is authenticated"""
     try:
-        creds = get_credentials(request.session)
+        creds = get_credentials_from_request(request)
         if not creds or not creds.valid:
             return {"authorized": False, "error": "Invalid credentials"}
 
@@ -170,15 +241,21 @@ def check_auth(request: Request):
             "picture": user_info.get("picture")
         }
     except Exception as e:
+        logger.error(f"Error checking auth: {str(e)}")
         return {"authorized": False, "error": str(e)}
 
 @app.post("/logout")
 def logout(request: Request):
-    """Logout user and clear session credentials"""
+    """Logout user and clear auth token"""
     try:
-        if "credentials" in request.session:
-            del request.session["credentials"]
-        return {"message": "Logged out successfully"}
+        response = {"message": "Logged out successfully"}
+        
+        # Create response and clear the cookie
+        from fastapi.responses import JSONResponse
+        json_response = JSONResponse(content=response)
+        json_response.delete_cookie("auth_token")
+        
+        return json_response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
@@ -187,7 +264,7 @@ def parse_and_execute(request: Request, data: TaskInput):
     """Parse natural language task and execute appropriate action"""
     # Check if user is authenticated first
     try:
-        creds = get_credentials(request.session)
+        creds = get_credentials_from_request(request)
         if not creds or not creds.valid:
             raise HTTPException(status_code=401, detail="User not authenticated. Please authorize with Google first.")
     except Exception as e:

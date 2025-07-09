@@ -70,7 +70,7 @@ def exchange_code(code, origin: str):
             flow.fetch_token(code=code)
         except Exception as e:
             logger.error(f"Error during flow.fetch_token(): {str(e)}")
-            raise # Re-raise the exception to be caught by the outer except block
+            raise
 
         creds = flow.credentials
 
@@ -86,8 +86,45 @@ def exchange_code(code, origin: str):
         logger.error(f"Error exchanging code: {str(e)}")
         raise
 
+def get_credentials_from_token(credentials_json: str):
+    """Get valid credentials from JSON string (for JWT usage)"""
+    try:
+        logger.info("Getting credentials from token...")
+        
+        if not credentials_json:
+            logger.info("No credentials JSON provided")
+            return None
+
+        logger.info("Credentials JSON found. Attempting to load...")
+        creds = Credentials.from_authorized_user_info(json.loads(credentials_json), SCOPES)
+
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                logger.info("Refreshing expired credentials...")
+                creds.refresh(Request())
+                logger.info("Credentials refreshed successfully")
+            except RefreshError as e:
+                logger.error(f"Failed to refresh credentials: {str(e)}")
+                return None
+            except Exception as e:
+                logger.error(f"Error refreshing credentials: {str(e)}")
+                return None
+
+        if creds and creds.valid:
+            logger.info("Credentials are valid")
+            return creds
+        else:
+            logger.info("No valid credentials found after check/refresh")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error getting credentials from token: {str(e)}")
+        return None
+
+# Keep the old function for backward compatibility (though it won't work with JWT)
 def get_credentials(session):
-    """Get valid credentials from session"""
+    """Get valid credentials from session - DEPRECATED for JWT implementation"""
+    logger.warning("get_credentials(session) is deprecated. Use get_credentials_from_token() instead.")
     try:
         logger.info("Getting credentials from session...")
         creds_json = session.get("credentials")
@@ -96,7 +133,7 @@ def get_credentials(session):
             logger.info("No credentials found in session")
             return None
 
-        logger.info("Credentials found in session. Attempting to load...") # ADDED LOG
+        logger.info("Credentials found in session. Attempting to load...")
         creds = Credentials.from_authorized_user_info(json.loads(creds_json), SCOPES)
 
         if creds and creds.expired and creds.refresh_token:
@@ -117,7 +154,7 @@ def get_credentials(session):
             logger.info("Credentials are valid")
             return creds
         else:
-            logger.info("No valid credentials found in session after check/refresh") # Modified message
+            logger.info("No valid credentials found in session after check/refresh")
             return None
 
     except Exception as e:

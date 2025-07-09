@@ -8,3 +8,4 @@ Requests
 starlette
 uvicorn
 itsdangerous 
+PyJWT
