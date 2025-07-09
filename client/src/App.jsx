@@ -13,7 +13,8 @@ function App() {
   const [userInfo, setUserInfo] = useState(null);
   const messagesEndRef = useRef(null);
 
-  const API_BASE_URL = 'https://smart-to-do-list-4bi2.onrender.com';
+  // const API_BASE_URL = 'http://localhost:8000';
+  const API_BASE_URL = 'https://smart-to-do-list-yy8z.onrender.com';
 
   // Check auth status on component mount
   useEffect(() => {
@@ -478,15 +479,10 @@ useEffect(() => {
       <div className="max-w-4xl mx-auto px-4 py-6">
         {!isAuthorized ? (
           <div className="flex items-center justify-center min-h-[60vh]">
-            <div className={`text-center p-8 rounded-2xl max-w-md ${
-              darkMode 
-                ? 'bg-gray-800 border border-gray-700' 
-                : 'bg-gray-50 border border-gray-200'
+            <div className={`p-8 rounded-lg shadow-lg text-center max-w-md w-full flex flex-col items-center justify-center ${
+              darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'
             }`}>
-              <Calendar className="mx-auto mb-4 text-blue-500" size={48} />
-              <h2 className={`text-2xl font-semibold mb-4 ${
-                darkMode ? 'text-white' : 'text-gray-900'
-              }`}>
+              <h2 className="text-2xl font-bold mb-4">
                 Connect Your Google Account
               </h2>
               <p className={`mb-6 ${
