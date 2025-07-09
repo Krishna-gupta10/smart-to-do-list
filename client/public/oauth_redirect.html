@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authentication Redirect</title>
+</head>
+<body>
+    <script>
+        // This script runs on the frontend's origin (e.g., http://localhost:5173)
+        // It receives the OAuth status from the backend via URL parameters
+        // and then relays it to the main window.
+
+        const params = new URLSearchParams(window.location.search);
+        const type = params.get('type');
+        const authorized = params.get('authorized') === 'true';
+        const error = params.get('error');
+
+        if (window.opener) {
+            if (type === 'oauth_success') {
+                window.opener.postMessage({ type: 'oauth_success', data: { authorized: authorized } }, window.location.origin);
+            } else if (type === 'oauth_error') {
+                window.opener.postMessage({ type: 'oauth_error', error: error }, window.location.origin);
+            }
+        }
+        window.close();
+    </script>
+</body>
+</html>

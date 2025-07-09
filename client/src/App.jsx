@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Send, Sun, Moon, Calendar, CheckCircle, Clock, User } from 'lucide-react';
 
 function App() {
@@ -11,6 +11,7 @@ function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
+  const messagesEndRef = useRef(null);
 
   const API_BASE_URL = 'https://smart-to-do-list-4bi2.onrender.com';
 
@@ -18,6 +19,11 @@ function App() {
   useEffect(() => {
     checkAuthStatus();
   }, []);
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // Listen for OAuth messages from popup
   useEffect(() => {
@@ -101,7 +107,7 @@ function App() {
       const data = await res.json();
 
       if (data.auth_url) {
-        console.log('Redirecting popup to OAuth URL...');
+        console.log('Redirecting popup to OAuth URL:', data.auth_url);
         authWindow.location.href = data.auth_url;
       } else {
         console.error('No auth URL received from backend');
@@ -171,8 +177,7 @@ function App() {
       }
       
       const data = await res.json();
-      const formattedResponse = formatMessage(data);
-      const assistantMessage = { type: 'assistant', content: formattedResponse };
+      const assistantMessage = { type: 'assistant', content: data };
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error:', error);
@@ -366,7 +371,7 @@ function App() {
           <h1 className={`text-6xl font-bold mb-8 transition-all duration-1000 text-white ${
             step >= 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
           }`}>
-            What is Smart?
+            What's Smart?
           </h1>
           
           <div className="relative">
@@ -398,7 +403,7 @@ function App() {
           <div className={`mt-12 text-8xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent transition-all duration-1000 ${
             step >= 4 ? 'opacity-100 scale-100' : 'opacity-0 scale-75'
           }`}>
-            ME
+            Evernote AI
           </div>
         </div>
       </div>
@@ -524,7 +529,7 @@ function App() {
                   <h2 className={`text-2xl font-semibold mb-2 ${
                     darkMode ? 'text-white' : 'text-gray-900'
                   }`}>
-                    How can I help you today?
+                    Ready when you are!
                   </h2>
                   <p className={`text-sm ${
                     darkMode ? 'text-gray-400' : 'text-gray-600'
@@ -535,6 +540,7 @@ function App() {
               ) : (
                 <div className="space-y-4">
                   {messages.map((message, index) => renderMessage(message, index))}
+                  <div ref={messagesEndRef} />
                 </div>
               )}
               
