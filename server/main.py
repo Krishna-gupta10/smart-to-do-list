@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import re, json, os, secrets
 from datetime import datetime
-import logging  # ADD THIS
+import logging
+from fastapi.middleware.cors import CORSMiddleware
+
 
 from utils.gemini import call_gemini
 from utils.google_auth import get_credentials, get_auth_url, exchange_code
@@ -28,6 +30,14 @@ app = FastAPI()
 
 # Generate a secure secret key
 SECRET_KEY = secrets.token_hex(32)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://evernote-ai.netlify.app"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.add_middleware(
     CORSMiddleware,
