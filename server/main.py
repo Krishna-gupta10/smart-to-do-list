@@ -81,21 +81,28 @@ def oauth2callback_get(request: Request):
         code = request.query_params.get('code')
         error = request.query_params.get('error')
 
+        logger.info(f"oauth2callback_get received - code: {code}, error: {error}, origin: {origin}") # ADDED LOG
+
         if error:
+            logger.error(f"OAuth error received: {error}") # ADDED LOG
             return create_response(origin, {"type": "oauth_error", "error": error})
 
         if not code:
+            logger.error("No code received in oauth2callback") # ADDED LOG
             return create_response(origin, {"type": "oauth_error", "error": "no_code_received"})
 
         try:
             creds = exchange_code(code, origin)
+            logger.info(f"Credentials exchanged successfully: {creds.to_json()}") # ADDED LOG
             request.session["credentials"] = creds.to_json()
             return create_response(origin, {"type": "oauth_success", "authorized": "true"})
 
         except Exception as auth_error:
+            logger.error(f"Authentication failed during code exchange: {str(auth_error)}") # ADDED LOG
             return create_response(origin, {"type": "oauth_error", "error": "authentication_failed", "details": str(auth_error)})
 
     except Exception as e:
+        logger.error(f"Unexpected error in oauth2callback_get: {str(e)}") # ADDED LOG
         return create_response(origin, {"type": "oauth_error", "error": "unexpected_error", "details": str(e)})
 
 # Keep your existing POST endpoint for API calls
