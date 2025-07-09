@@ -200,7 +200,7 @@ def check_auth():
     try:
         creds = get_credentials()
         if not creds or not creds.valid:
-            return {"authorized": False}
+            return {"authorized": False, "error": "Invalid credentials"}
 
         # Fetch user info
         service = build('oauth2', 'v2', credentials=creds)
