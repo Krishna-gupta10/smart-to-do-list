@@ -28,29 +28,24 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Generate a secure secret key
-SECRET_KEY = secrets.token_hex(32)
+# Use a persistent secret key from environment variables
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    logger.warning("SECRET_KEY not found in environment variables. Using a temporary key. Sessions will not persist across server restarts.")
+    SECRET_KEY = secrets.token_hex(32)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://evernote-ai.netlify.app"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://smart-to-do-list-yy8z.onrender.com"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Add session middleware for OAuth state management
+# Add session middleware BEFORE CORS middleware
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://evernote-ai.netlify.app", "http://localhost:5173", "https://smart-to-do-list-yy8z.onrender.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class TaskInput(BaseModel):
