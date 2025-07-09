@@ -8,7 +8,8 @@ import re, json, os
 from datetime import datetime
 
 from utils.gemini import call_gemini
-from utils.google_auth import get_credentials, get_auth_url, exchange_code
+from utils.google_auth import get_credentials, get_auth_url, exchange_code, revoke_credentials
+from googleapiclient.discovery import build
 from utils.calendar_task import (
     create_calendar_event,
     check_schedule,
@@ -59,15 +60,12 @@ def oauth2callback_get(request: Request):
     try:
         # Get state from session
         auth_state = request.session.get("auth_state")
-        print(f"Debug: auth_state from session: {auth_state}")
         
         # Get origin from state
         origin = auth_state.get("origin") if auth_state else "https://smart-to-do-list-4bi2.onrender.com"
-        print(f"Debug: using origin: {origin}")
         
         code = request.query_params.get('code')
         error = request.query_params.get('error')
-        print(f"Debug: received code: {code is not None}, error: {error}")
         
         if error:
             # Return error page that notifies parent
@@ -115,9 +113,7 @@ def oauth2callback_get(request: Request):
         
         # Exchange code for credentials
         try:
-            print(f"Debug: attempting to exchange code for credentials")
             creds = exchange_code(code)
-            print(f"Debug: credentials exchange successful: {creds is not None}")
             
             # Return success page that properly notifies parent and closes
             return HTMLResponse(f"""
@@ -203,9 +199,30 @@ def check_auth():
     """Check if user is authenticated"""
     try:
         creds = get_credentials()
-        return {"authorized": creds is not None and creds.valid}
+        if not creds or not creds.valid:
+            return {"authorized": False}
+
+        # Fetch user info
+        service = build('oauth2', 'v2', credentials=creds)
+        user_info = service.userinfo().get().execute()
+        
+        return {
+            "authorized": True,
+            "name": user_info.get("name"),
+            "email": user_info.get("email"),
+            "picture": user_info.get("picture")
+        }
     except Exception as e:
         return {"authorized": False, "error": str(e)}
+
+@app.post("/logout")
+def logout():
+    """Logout user and revoke credentials"""
+    try:
+        revoke_credentials()
+        return {"message": "Logged out successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
 @app.post("/parse-and-execute")
 def parse_and_execute(data: TaskInput):
@@ -222,7 +239,7 @@ def parse_and_execute(data: TaskInput):
         raw_response = call_gemini(data.task)
 
         # Check if Gemini responded with a JSON task
-        if "{" in raw_response:
+        if "{" in raw_response: 
             try:
                 json_str = re.search(r"\{.*\}", raw_response, re.DOTALL)[0]
                 parsed = json.loads(json_str)
@@ -309,43 +326,27 @@ def parse_and_execute(data: TaskInput):
                         "parsed": parsed
                     }
 
-                # 7. Search Emails
+                # 7. Search Email
                 elif parsed["action"] == "search_email":
-                    matches = search_email(creds, parsed["query"])
+                    emails = search_email(creds, parsed["query"])
                     return {
-                        "status": "Results ✅",
-                        "emails": matches,
+                        "status": "Search ✅",
+                        "emails": emails,
                         "parsed": parsed
                     }
 
-                else:
-                    return {
-                        "status": "Parsed only",
-                        "parsed": parsed,
-                        "note": "Execution for this action not yet implemented"
-                    }
+            except (json.JSONDecodeError, KeyError) as e:
+                # Fallback for parsing errors
+                return {"status": "Error ❌", "error": f"Failed to parse action: {e}"}
+        
+        else:
+            # Fallback for non-JSON responses
+            return {"status": "Processed ✅", "message": raw_response}
 
-            except json.JSONDecodeError as e:
-                return {
-                    "status": "Parse Error",
-                    "error": f"Failed to parse JSON: {str(e)}",
-                    "raw": raw_response
-                }
-            except Exception as e:
-                return {
-                    "status": "Execution Error",
-                    "error": str(e),
-                    "raw": raw_response
-                }
-
-        # If response wasn't JSON, return it as a general message
-        return {
-            "status": "Message 💬",
-            "message": raw_response
-        }
-
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing task: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def root():
