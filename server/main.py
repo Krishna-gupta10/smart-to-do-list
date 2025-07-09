@@ -36,15 +36,18 @@ if not SECRET_KEY:
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://evernote-ai.netlify.app", "http://localhost:5173", "https://smart-to-do-list-yy8z.onrender.com"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=[
+        "https://evernote-ai.netlify.app", 
+        "http://localhost:5173", 
+        "https://smart-to-do-list-yy8z.onrender.com"
+    ],
+    allow_credentials=True,  # CRITICAL: Must be True for cookies
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"]  # Added to expose headers if needed
 )
-
 class TaskInput(BaseModel):
     task: str
 
@@ -168,13 +171,16 @@ def oauth2callback_get(request: Request):
         """
         
         response = HTMLResponse(content=html_response_content)
+        
+        # FIXED: Proper cookie configuration for cross-origin
         response.set_cookie(
             "auth_token",
             jwt_token,
-            max_age=JWT_EXPIRATION_HOURS * 3600,  # Convert hours to seconds
+            max_age=JWT_EXPIRATION_HOURS * 3600,
             httponly=True,
-            secure=True,
-            samesite="lax"
+            secure=True,  # Required for HTTPS
+            samesite="none",  # CRITICAL: Changed from "lax" to "none" for cross-origin
+            domain=None  # Let browser handle domain
         )
         
         logger.info("JWT token created and set in cookie successfully.")
@@ -248,15 +254,24 @@ def check_auth(request: Request):
 def logout(request: Request):
     """Logout user and clear auth token"""
     try:
-        response = {"message": "Logged out successfully"}
-        
-        # Create response and clear the cookie
         from fastapi.responses import JSONResponse
-        json_response = JSONResponse(content=response)
-        json_response.delete_cookie("auth_token")
         
-        return json_response
+        response = JSONResponse(content={"message": "Logged out successfully"})
+        
+        # Clear the cookie with the same settings used when setting it
+        response.set_cookie(
+            "auth_token",
+            "",
+            max_age=0,  # Expire immediately
+            httponly=True,
+            secure=True,
+            samesite="none",
+            domain=None
+        )
+        
+        return response
     except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
 @app.post("/parse-and-execute")
