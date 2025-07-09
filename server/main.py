@@ -70,10 +70,10 @@ def oauth2callback_get(request: Request):
         error = request.query_params.get('error')
 
         if error:
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error={error}")
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error={error}", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
 
         if not code:
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=no_code_received")
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=no_code_received", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
 
         # Exchange code for credentials
         try:
@@ -81,13 +81,13 @@ def oauth2callback_get(request: Request):
             request.session["credentials"] = creds.to_json()
 
             # Redirect to success page
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_success&authorized=true")
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_success&authorized=true", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
 
         except Exception as auth_error:
-            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=authentication_failed&details={str(auth_error)}")
+            return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=authentication_failed&details={str(auth_error)}", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
 
     except Exception as e:
-        return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=unexpected_error&details={str(e)}")
+        return RedirectResponse(url=f"{origin}/oauth_redirect.html?type=oauth_error&error=unexpected_error&details={str(e)}", headers={"Cross-Origin-Opener-Policy": "unsafe-none"})
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
