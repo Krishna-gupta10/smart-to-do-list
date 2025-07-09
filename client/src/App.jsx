@@ -13,8 +13,8 @@ function App() {
   const [userInfo, setUserInfo] = useState(null);
   const messagesEndRef = useRef(null);
 
-  // const API_BASE_URL = 'http://localhost:8000';
-  const API_BASE_URL = 'https://smart-to-do-list-yy8z.onrender.com';
+  const API_BASE_URL = 'http://localhost:8000';
+  // const API_BASE_URL = 'https://smart-to-do-list-yy8z.onrender.com';
 
   // Check auth status on component mount
   useEffect(() => {
@@ -26,7 +26,7 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-useEffect(() => {
+  useEffect(() => {
     const handleMessage = (event) => {
       // IMPORTANT: Check the origin for security
       const backendOrigin = new URL(API_BASE_URL).origin;
@@ -62,13 +62,27 @@ useEffect(() => {
       console.log('Checking auth status...');
       const res = await fetch(`${API_BASE_URL}/check-auth`, {
         method: 'GET',
-        credentials: 'include',
+        credentials: 'include', // CRITICAL: Include cookies
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
+
+      console.log('Auth check response status:', res.status);
+
+      if (!res.ok) {
+        console.log('Auth check failed:', res.status);
+        setIsAuthorized(false);
+        setUserInfo(null);
+        setCheckingAuth(false);
+        return;
+      }
+
       const data = await res.json();
       console.log('Auth status response:', data);
-      
+
       setIsAuthorized(data.authorized || false);
-      
+
       if (data.authorized) {
         console.log('User is authorized');
         setUserInfo({
@@ -84,9 +98,11 @@ useEffect(() => {
     } catch (error) {
       console.error('Error checking auth:', error);
       setIsAuthorized(false);
+      setUserInfo(null);
     }
     setCheckingAuth(false);
   };
+
 
   const handleAuthorize = async () => {
     setAuthLoading(true);
@@ -137,25 +153,35 @@ useEffect(() => {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API_BASE_URL}/logout`, {
+      const res = await fetch(`${API_BASE_URL}/logout`, {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'include', // CRITICAL: Include cookies
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
-      setIsAuthorized(false);
-      setUserInfo(null);
+
+      if (res.ok) {
+        setIsAuthorized(false);
+        setUserInfo(null);
+        setMessages([]); // Clear messages on logout
+      }
     } catch (error) {
       console.error('Error logging out:', error);
+      // Still clear local state even if logout request fails
+      setIsAuthorized(false);
+      setUserInfo(null);
     }
   };
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
-    
+
     const userMessage = { type: 'user', content: prompt };
     setMessages(prev => [...prev, userMessage]);
     setPrompt('');
     setLoading(true);
-    
+
     try {
       const res = await fetch(`${API_BASE_URL}/parse-and-execute`, {
         method: 'POST',
@@ -163,18 +189,25 @@ useEffect(() => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ task: prompt }),
-        credentials: 'include',
+        credentials: 'include', // CRITICAL: Include cookies
       });
-      
+
+      console.log('Task submission response status:', res.status);
+
       if (res.status === 401) {
         // User is not authenticated
         setIsAuthorized(false);
+        setUserInfo(null);
         const errorMessage = { type: 'assistant', content: { error: 'Authentication required. Please connect your Google account.' } };
         setMessages(prev => [...prev, errorMessage]);
         setLoading(false);
         return;
       }
-      
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
       const data = await res.json();
       const assistantMessage = { type: 'assistant', content: data };
       setMessages(prev => [...prev, assistantMessage]);
@@ -185,6 +218,7 @@ useEffect(() => {
     }
     setLoading(false);
   };
+
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -213,7 +247,7 @@ useEffect(() => {
       if (response.events.length === 0) {
         return "Your schedule is free for the requested time.";
       }
-      const eventList = response.events.map(event => 
+      const eventList = response.events.map(event =>
         `• ${event.summary} (${new Date(event.start).toLocaleString()})`
       ).join('\n');
       return `Here's your schedule:\n${eventList}`;
@@ -223,7 +257,7 @@ useEffect(() => {
       if (response.slots.length === 0) {
         return "No free slots available for the requested time.";
       }
-      const slotList = response.slots.map(slot => 
+      const slotList = response.slots.map(slot =>
         `• ${new Date(slot.start).toLocaleString()} - ${new Date(slot.end).toLocaleString()}`
       ).join('\n');
       return `Available time slots:\n${slotList}`;
@@ -233,7 +267,7 @@ useEffect(() => {
       if (response.emails.length === 0) {
         return "No emails found for the specified criteria.";
       }
-      const emailList = response.emails.map(email => 
+      const emailList = response.emails.map(email =>
         `• From: ${email.sender}\n  Subject: ${email.subject}\n  Summary: ${email.summary}`
       ).join('\n\n');
       return `Email Summary:\n${emailList}`;
@@ -247,7 +281,7 @@ useEffect(() => {
       if (response.emails.length === 0) {
         return "No unread emails found.";
       }
-      const emailList = response.emails.map(email => 
+      const emailList = response.emails.map(email =>
         `• From: ${email.sender}\n  Subject: ${email.subject}`
       ).join('\n\n');
       return `Unread emails:\n${emailList}`;
@@ -257,7 +291,7 @@ useEffect(() => {
       if (response.emails.length === 0) {
         return "No emails found matching your search.";
       }
-      const emailList = response.emails.map(email => 
+      const emailList = response.emails.map(email =>
         `• From: ${email.sender}\n  Subject: ${email.subject}\n  Date: ${new Date(email.date).toLocaleString()}`
       ).join('\n\n');
       return `Search results:\n${emailList}`;
@@ -283,11 +317,10 @@ useEffect(() => {
     if (message.type === 'user') {
       return (
         <div key={index} className="flex justify-end mb-6">
-          <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-            darkMode 
-              ? 'bg-blue-600 text-white' 
-              : 'bg-blue-500 text-white'
-          }`}>
+          <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${darkMode
+            ? 'bg-blue-600 text-white'
+            : 'bg-blue-500 text-white'
+            }`}>
             {message.content}
           </div>
         </div>
@@ -297,11 +330,10 @@ useEffect(() => {
     const formattedMessage = formatMessage(message.content);
     return (
       <div key={index} className="flex justify-start mb-6">
-        <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-          darkMode 
-            ? 'bg-gray-800 border border-gray-700 text-gray-200' 
-            : 'bg-gray-100 border border-gray-200 text-gray-800'
-        }`}>
+        <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${darkMode
+          ? 'bg-gray-800 border border-gray-700 text-gray-200'
+          : 'bg-gray-100 border border-gray-200 text-gray-800'
+          }`}>
           <div className="whitespace-pre-line">
             {formattedMessage}
           </div>
@@ -315,12 +347,12 @@ useEffect(() => {
     const [step, setStep] = useState(0);
     const [typedText, setTypedText] = useState('');
     const [strikePosition, setStrikePosition] = useState(0);
-    
+
     const fullText = "Having or showing a quick-witted intelligence";
-    
+
     useEffect(() => {
       const timer1 = setTimeout(() => setStep(1), 1000);
-      
+
       // Start typing animation
       const startTyping = setTimeout(() => {
         setStep(2);
@@ -355,7 +387,7 @@ useEffect(() => {
           }
         }, 50);
       }, 2000);
-      
+
       return () => {
         clearTimeout(timer1);
         clearTimeout(startTyping);
@@ -363,27 +395,23 @@ useEffect(() => {
     }, []);
 
     return (
-      <div className={`fixed inset-0 z-50 flex items-center justify-center bg-gray-900 transition-all duration-500 ${
-        step === 5 ? 'opacity-0' : 'opacity-100'
-      }`}>
+      <div className={`fixed inset-0 z-50 flex items-center justify-center bg-gray-900 transition-all duration-500 ${step === 5 ? 'opacity-0' : 'opacity-100'
+        }`}>
         <div className="text-center max-w-2xl px-8">
-          <h1 className={`text-6xl font-bold mb-8 transition-all duration-1000 text-white ${
-            step >= 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-          }`}>
+          <h1 className={`text-6xl font-bold mb-8 transition-all duration-1000 text-white ${step >= 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+            }`}>
             What's Smart?
           </h1>
-          
+
           <div className="relative">
-            <p className={`text-xl leading-relaxed transition-all duration-1000 text-gray-300 ${
-              step >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-            }`}>
+            <p className={`text-xl leading-relaxed transition-all duration-1000 text-gray-300 ${step >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+              }`}>
               <span className="inline-block">
                 {typedText.split('').map((char, index) => (
                   <span
                     key={index}
-                    className={`inline-block relative ${
-                      step >= 3 && index < strikePosition ? 'line-through' : ''
-                    }`}
+                    className={`inline-block relative ${step >= 3 && index < strikePosition ? 'line-through' : ''
+                      }`}
                     style={{
                       textDecorationColor: '#ef4444',
                       textDecorationThickness: '2px'
@@ -398,10 +426,9 @@ useEffect(() => {
               )}
             </p>
           </div>
-          
-          <div className={`mt-12 text-8xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent transition-all duration-1000 ${
-            step >= 4 ? 'opacity-100 scale-100' : 'opacity-0 scale-75'
-          }`}>
+
+          <div className={`mt-12 text-8xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent transition-all duration-1000 ${step >= 4 ? 'opacity-100 scale-100' : 'opacity-0 scale-75'
+            }`}>
             Evernote AI
           </div>
         </div>
@@ -415,9 +442,8 @@ useEffect(() => {
 
   if (checkingAuth) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${
-        darkMode ? 'bg-gray-900' : 'bg-white'
-      }`}>
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-white'
+        }`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
@@ -429,33 +455,30 @@ useEffect(() => {
   }
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode ? 'bg-gray-900' : 'bg-white'
-    }`}>
-      {/* Header */}
-      <header className={`sticky top-0 z-10 border-b backdrop-blur-sm ${
-        darkMode 
-          ? 'bg-gray-900/80 border-gray-700' 
-          : 'bg-white/80 border-gray-200'
+    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-gray-900' : 'bg-white'
       }`}>
+      {/* Header */}
+      <header className={`sticky top-0 z-10 border-b backdrop-blur-sm ${darkMode
+        ? 'bg-gray-900/80 border-gray-700'
+        : 'bg-white/80 border-gray-200'
+        }`}>
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
               <span className="text-white font-bold text-sm">P</span>
             </div>
-            <h1 className={`text-xl font-semibold ${
-              darkMode ? 'text-white' : 'text-gray-900'
-            }`}>
+            <h1 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'
+              }`}>
               Evernote
             </h1>
           </div>
-          
+
           <div className="flex items-center gap-4">
             {isAuthorized && userInfo && (
               <div className="flex items-center gap-3">
                 <img src={userInfo.picture} alt={userInfo.name} className="w-8 h-8 rounded-full" />
                 <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{userInfo.name}</span>
-                <button 
+                <button
                   onClick={handleLogout}
                   className={`text-sm font-medium ${darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}>
                   Logout
@@ -464,11 +487,10 @@ useEffect(() => {
             )}
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`p-2 rounded-lg transition-colors ${
-                darkMode 
-                  ? 'hover:bg-gray-800 text-gray-300' 
-                  : 'hover:bg-gray-100 text-gray-600'
-              }`}
+              className={`p-2 rounded-lg transition-colors ${darkMode
+                ? 'hover:bg-gray-800 text-gray-300'
+                : 'hover:bg-gray-100 text-gray-600'
+                }`}
             >
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -479,32 +501,29 @@ useEffect(() => {
       <div className="max-w-4xl mx-auto px-4 py-6">
         {!isAuthorized ? (
           <div className="flex items-center justify-center min-h-[60vh]">
-            <div className={`p-8 rounded-lg shadow-lg text-center max-w-md w-full flex flex-col items-center justify-center ${
-              darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'
-            }`}>
+            <div className={`p-8 rounded-lg shadow-lg text-center max-w-md w-full flex flex-col items-center justify-center ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'
+              }`}>
               <h2 className="text-2xl font-bold mb-4">
                 Connect Your Google Account
               </h2>
-              <p className={`mb-6 ${
-                darkMode ? 'text-gray-300' : 'text-gray-600'
-              }`}>
+              <p className={`mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}>
                 Authorize with Google to access your calendar and manage your tasks.
               </p>
-              <button 
+              <button
                 onClick={handleAuthorize}
                 disabled={authLoading}
-                className={`bg-white hover:bg-gray-50 text-gray-900 font-medium py-3 px-6 rounded-lg transition-colors duration-200 border border-gray-300 shadow-sm flex items-center gap-3 ${
-                  authLoading ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                className={`bg-white hover:bg-gray-50 text-gray-900 font-medium py-3 px-6 rounded-lg transition-colors duration-200 border border-gray-300 shadow-sm flex items-center gap-3 ${authLoading ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
               >
                 {authLoading ? (
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
                 ) : (
                   <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                   </svg>
                 )}
                 {authLoading ? 'Connecting...' : 'Continue with Google'}
@@ -520,14 +539,12 @@ useEffect(() => {
                   <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
                     <span className="text-white font-bold text-2xl">P</span>
                   </div>
-                  <h2 className={`text-2xl font-semibold mb-2 ${
-                    darkMode ? 'text-white' : 'text-gray-900'
-                  }`}>
+                  <h2 className={`text-2xl font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'
+                    }`}>
                     Ready when you are!
                   </h2>
-                  <p className={`text-sm ${
-                    darkMode ? 'text-gray-400' : 'text-gray-600'
-                  }`}>
+                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'
+                    }`}>
                     I can help you schedule meetings, check your calendar, and manage your tasks.
                   </p>
                 </div>
@@ -537,23 +554,21 @@ useEffect(() => {
                   <div ref={messagesEndRef} />
                 </div>
               )}
-              
+
               {loading && (
                 <div className="flex justify-start mb-6">
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    darkMode 
-                      ? 'bg-gray-800 border border-gray-700' 
-                      : 'bg-gray-100 border border-gray-200'
-                  }`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${darkMode
+                    ? 'bg-gray-800 border border-gray-700'
+                    : 'bg-gray-100 border border-gray-200'
+                    }`}>
                     <div className="flex items-center gap-2">
                       <div className="flex space-x-1">
                         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
                         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                         <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                       </div>
-                      <span className={`text-sm ${
-                        darkMode ? 'text-gray-400' : 'text-gray-600'
-                      }`}>
+                      <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'
+                        }`}>
                         Thinking...
                       </span>
                     </div>
@@ -563,11 +578,10 @@ useEffect(() => {
             </div>
 
             {/* Input */}
-            <div className={`sticky bottom-0 p-4 rounded-2xl border ${
-              darkMode 
-                ? 'bg-gray-800 border-gray-700' 
-                : 'bg-white border-gray-200'
-            } shadow-lg`}>
+            <div className={`sticky bottom-0 p-4 rounded-2xl border ${darkMode
+              ? 'bg-gray-800 border-gray-700'
+              : 'bg-white border-gray-200'
+              } shadow-lg`}>
               <div className="flex items-end gap-3">
                 <div className="flex-1">
                   <textarea
@@ -576,9 +590,8 @@ useEffect(() => {
                     onKeyPress={handleKeyPress}
                     placeholder="Message Evernote..."
                     rows="1"
-                    className={`w-full resize-none border-0 bg-transparent focus:outline-none text-sm leading-6 ${
-                      darkMode ? 'text-white placeholder-gray-400' : 'text-gray-900 placeholder-gray-500'
-                    }`}
+                    className={`w-full resize-none border-0 bg-transparent focus:outline-none text-sm leading-6 ${darkMode ? 'text-white placeholder-gray-400' : 'text-gray-900 placeholder-gray-500'
+                      }`}
                     style={{ minHeight: '24px', maxHeight: '120px' }}
                     disabled={loading}
                   />
@@ -586,11 +599,10 @@ useEffect(() => {
                 <button
                   onClick={handleSubmit}
                   disabled={loading || !prompt.trim()}
-                  className={`p-2 rounded-lg transition-colors ${
-                    loading || !prompt.trim()
-                      ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700'
-                  }`}
+                  className={`p-2 rounded-lg transition-colors ${loading || !prompt.trim()
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
                 >
                   <Send size={16} className="text-white" />
                 </button>
