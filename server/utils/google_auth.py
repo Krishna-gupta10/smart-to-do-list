@@ -19,7 +19,7 @@ SCOPES = [
 CLIENT_SECRETS_FILE = "credentials.json"
 TOKEN_FILE = "token.json"
 
-REDIRECT_URI = "https://evernote-ai.netlify.app/oauth2callback"
+REDIRECT_URI = "https://smart-to-do-list-4bi2.onrender.com/oauth2callback"
 
 def get_auth_url(origin: str = None):
     """Generate Google OAuth authorization URL"""
@@ -39,12 +39,7 @@ def get_auth_url(origin: str = None):
             include_granted_scopes='true'
         )
         
-        # Store the origin in the state
-        auth_state = {"state": state, "origin": origin}
-        
-        # We need to pass the state to the callback
-        from main import app
-        app.state.auth_state = auth_state
+        # State will be handled by session middleware in main.py
         
         logger.info(f"Generated auth URL: {auth_url}")
         return auth_url, state

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -26,6 +27,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add session middleware for OAuth state management
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="your-secret-key-change-this-in-production"
+)
+
 class TaskInput(BaseModel):
     task: str
 
@@ -39,8 +46,8 @@ def authorize(request: Request):
         origin = request.query_params.get("origin")
         auth_url, state = get_auth_url(origin=origin)
         
-        # Store the state in the session
-        request.session["auth_state"] = state
+        # Store the origin in the session with the state
+        request.session["auth_state"] = {"state": state, "origin": origin}
         
         return {"auth_url": auth_url}
     except Exception as e:
@@ -52,12 +59,15 @@ def oauth2callback_get(request: Request):
     try:
         # Get state from session
         auth_state = request.session.get("auth_state")
+        print(f"Debug: auth_state from session: {auth_state}")
         
         # Get origin from state
         origin = auth_state.get("origin") if auth_state else "https://smart-to-do-list-4bi2.onrender.com"
+        print(f"Debug: using origin: {origin}")
         
         code = request.query_params.get('code')
         error = request.query_params.get('error')
+        print(f"Debug: received code: {code is not None}, error: {error}")
         
         if error:
             # Return error page that notifies parent
@@ -105,7 +115,9 @@ def oauth2callback_get(request: Request):
         
         # Exchange code for credentials
         try:
+            print(f"Debug: attempting to exchange code for credentials")
             creds = exchange_code(code)
+            print(f"Debug: credentials exchange successful: {creds is not None}")
             
             # Return success page that properly notifies parent and closes
             return HTMLResponse(f"""
