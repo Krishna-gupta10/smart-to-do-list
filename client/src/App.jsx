@@ -10,6 +10,7 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
+  const [userInfo, setUserInfo] = useState(null);
 
   const API_BASE_URL = 'https://smart-to-do-list-4bi2.onrender.com';
 
@@ -57,8 +58,14 @@ function App() {
       
       if (data.authorized) {
         console.log('User is authorized');
+        setUserInfo({
+          name: data.name,
+          email: data.email,
+          picture: data.picture
+        });
       } else {
         console.log('User is not authorized');
+        setUserInfo(null);
       }
     } catch (error) {
       console.error('Error checking auth:', error);
@@ -72,7 +79,8 @@ function App() {
     console.log('Starting OAuth flow...');
     
     try {
-      const res = await fetch(`${API_BASE_URL}/authorize`);
+      const origin = window.location.origin;
+      const res = await fetch(`${API_BASE_URL}/authorize?origin=${encodeURIComponent(origin)}`);
       const data = await res.json();
       
       if (data.auth_url) {
@@ -111,6 +119,18 @@ function App() {
     } catch (error) {
       console.error('Error getting auth URL:', error);
       setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/logout`, {
+        method: 'POST',
+      });
+      setIsAuthorized(false);
+      setUserInfo(null);
+    } catch (error) {
+      console.error('Error logging out:', error);
     }
   };
 
@@ -416,11 +436,16 @@ function App() {
             </h1>
           </div>
           
-          <div className="flex items-center gap-3">
-            {isAuthorized && (
-              <div className="flex items-center gap-2 text-sm text-green-600">
-                <CheckCircle size={16} />
-                <span>Connected</span>
+          <div className="flex items-center gap-4">
+            {isAuthorized && userInfo && (
+              <div className="flex items-center gap-3">
+                <img src={userInfo.picture} alt={userInfo.name} className="w-8 h-8 rounded-full" />
+                <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{userInfo.name}</span>
+                <button 
+                  onClick={handleLogout}
+                  className={`text-sm font-medium ${darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'}`}>
+                  Logout
+                </button>
               </div>
             )}
             <button
