@@ -102,9 +102,10 @@ def oauth2callback_get(request: Request):
 
     if error:
         logger.error(f"OAuth error from Google: {error}")
-        # Even on error, we redirect to ourself to run the postMessage script
-        error_params = f"?error={error}"
-        return RedirectResponse(url=f"/oauth2callback{error_params}")
+        # Construct the full redirect URL
+        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        redirect_url = f"{api_base_url}/oauth2callback?error={error}"
+        return RedirectResponse(url=redirect_url)
 
     if not code:
         logger.error("No authorization code received.")
@@ -119,9 +120,11 @@ def oauth2callback_get(request: Request):
 
     except Exception as e:
         logger.error(f"Failed to exchange code for credentials: {str(e)}")
-        # Pass error info to the popup's script
-        error_params = f"?error=token_exchange_failed&details={str(e)}"
-        return RedirectResponse(url=f"/oauth2callback{error_params}")
+        # Construct the full redirect URL for the error case
+        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        error_details = str(e).replace('"', '\'"') # Basic escaping for URL
+        redirect_url = f"{api_base_url}/oauth2callback?error=token_exchange_failed&details={error_details}"
+        return RedirectResponse(url=redirect_url)
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
