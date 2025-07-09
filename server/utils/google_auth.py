@@ -57,8 +57,10 @@ def exchange_code(code, origin: str):
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
         
-        # Use the origin from the frontend to construct the redirect_uri
-        redirect_uri = f"{origin}/oauth_redirect.html"
+        # This redirect_uri must match the one registered in Google Cloud Console for the backend's /oauth2callback endpoint
+        # For local development, it's typically http://localhost:8000/oauth2callback
+        # For production, it would be your deployed backend URL + /oauth2callback
+        redirect_uri = "http://localhost:8000/oauth2callback"
         
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
