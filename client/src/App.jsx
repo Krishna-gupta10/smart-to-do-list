@@ -64,7 +64,8 @@ function App() {
           picture: data.picture
         });
       } else {
-        console.log('User is not authorized');
+        console.log('User is not authorized', data.error);
+        setIsAuthorized(false);
         setUserInfo(null);
       }
     } catch (error) {
