@@ -52,13 +52,11 @@ def get_auth_url(origin: str):
 def exchange_code(code, origin: str):
     """Exchange authorization code for credentials"""
     try:
-        logger.info(f"Exchanging code for credentials... Code: {code[:10]}..., Origin: {origin}") # ADDED LOG
+        logger.info(f"Exchanging code for credentials... Code: {code[:10]}..., Origin: {origin}")
 
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
 
-        # The redirect_uri must match the one used to obtain the authorization code, which is the frontend's oauth_redirect.html
-        # This ensures consistency with the redirect_uri registered in Google Cloud Console for the frontend.
         redirect_uri = f"{origin}/oauth_redirect.html"
 
         flow = Flow.from_client_secrets_file(
@@ -67,14 +65,19 @@ def exchange_code(code, origin: str):
             redirect_uri=redirect_uri
         )
 
-        logger.info(f"Attempting to fetch token with redirect_uri: {redirect_uri}") # ADDED LOG
-        flow.fetch_token(code=code)
+        logger.info(f"Attempting to fetch token with redirect_uri: {redirect_uri}")
+        try:
+            flow.fetch_token(code=code)
+        except Exception as e:
+            logger.error(f"Error during flow.fetch_token(): {str(e)}")
+            raise # Re-raise the exception to be caught by the outer except block
+
         creds = flow.credentials
 
-        logger.info(f"Token fetched. Credentials valid: {creds.valid}, expired: {creds.expired}") # ADDED LOG
+        logger.info(f"Token fetched. Credentials valid: {creds.valid}, expired: {creds.expired}")
 
         if not creds or not creds.valid:
-            raise Exception("Invalid credentials received after token fetch") # Modified message
+            raise Exception("Invalid credentials received after token fetch")
 
         logger.info("Successfully exchanged code for credentials")
         return creds
