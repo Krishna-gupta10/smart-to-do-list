@@ -4,11 +4,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import re, json, os
+import re, json, os, secrets
 from datetime import datetime
 
 from utils.gemini import call_gemini
-from utils.google_auth import get_credentials, get_auth_url, exchange_code, revoke_credentials
+from utils.google_auth import get_credentials, get_auth_url, exchange_code
 from googleapiclient.discovery import build
 from utils.calendar_task import (
     create_calendar_event,
@@ -21,9 +21,13 @@ load_dotenv()
 
 app = FastAPI()
 
+# Generate a secure secret key
+SECRET_KEY = secrets.token_hex(32)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "https://smart-to-do-list-4bi2.onrender.com"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,7 +35,7 @@ app.add_middleware(
 # Add session middleware for OAuth state management
 app.add_middleware(
     SessionMiddleware,
-    secret_key="your-secret-key-change-this-in-production"
+    secret_key=SECRET_KEY
 )
 
 class TaskInput(BaseModel):
@@ -115,6 +119,9 @@ def oauth2callback_get(request: Request):
         try:
             creds = exchange_code(code)
             
+            # Store credentials in session
+            request.session["credentials"] = creds.to_json()
+            
             # Return success page that properly notifies parent and closes
             return HTMLResponse(f"""
             <!DOCTYPE html>
@@ -183,53 +190,58 @@ def oauth2callback_get(request: Request):
 
 # Keep your existing POST endpoint for API calls
 @app.post("/oauth2callback")
-def oauth2callback_post(data: AuthCodeInput):
+def oauth2callback_post(request: Request, data: AuthCodeInput):
     """Handle OAuth callback with authorization code (POST request)"""
     try:
         creds = exchange_code(data.code)
-        return {
+        
+        # Store credentials in session
+        request.session["credentials"] = creds.to_json()
+        
+        return {{
             "message": "Authorization successful",
             "authorized": True
-        }
+        }}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Authorization failed: {str(e)}")
 
 @app.get("/check-auth")
-def check_auth():
+def check_auth(request: Request):
     """Check if user is authenticated"""
     try:
-        creds = get_credentials()
+        creds = get_credentials(request.session)
         if not creds or not creds.valid:
-            return {"authorized": False, "error": "Invalid credentials"}
+            return {{"authorized": False, "error": "Invalid credentials"}}
 
         # Fetch user info
         service = build('oauth2', 'v2', credentials=creds)
         user_info = service.userinfo().get().execute()
         
-        return {
+        return {{
             "authorized": True,
             "name": user_info.get("name"),
             "email": user_info.get("email"),
             "picture": user_info.get("picture")
-        }
+        }}
     except Exception as e:
-        return {"authorized": False, "error": str(e)}
+        return {{"authorized": False, "error": str(e)}}
 
 @app.post("/logout")
-def logout():
-    """Logout user and revoke credentials"""
+def logout(request: Request):
+    """Logout user and clear session credentials"""
     try:
-        revoke_credentials()
-        return {"message": "Logged out successfully"}
+        if "credentials" in request.session:
+            del request.session["credentials"]
+        return {{"message": "Logged out successfully"}}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
 
 @app.post("/parse-and-execute")
-def parse_and_execute(data: TaskInput):
+def parse_and_execute(request: Request, data: TaskInput):
     """Parse natural language task and execute appropriate action"""
     # Check if user is authenticated first
     try:
-        creds = get_credentials()
+        creds = get_credentials(request.session)
         if not creds or not creds.valid:
             raise HTTPException(status_code=401, detail="User not authenticated. Please authorize with Google first.")
     except Exception as e:
@@ -239,17 +251,17 @@ def parse_and_execute(data: TaskInput):
         raw_response = call_gemini(data.task)
 
         # Check if Gemini responded with a JSON task
-        if "{" in raw_response: 
+        if "{{" in raw_response: 
             try:
-                json_str = re.search(r"\{.*\}", raw_response, re.DOTALL)[0]
+                json_str = re.search(r"\{{.*\}}", raw_response, re.DOTALL)[0]
                 parsed = json.loads(json_str)
                 
                 if parsed.get("missing_fields"):
-                    return {
+                    return {{
                         "status": "Need Info ❓",
-                        "message": f"To proceed, I need: {', '.join(parsed['missing_fields'])}.",
+                        "message": f"To proceed, I need: {{', '.join(parsed['missing_fields'])}}.",
                         "parsed": parsed
-                    }
+                    }}
                 
                 # 1. Schedule Call
                 if parsed["action"] == "schedule_call":
@@ -270,30 +282,30 @@ def parse_and_execute(data: TaskInput):
                     if email:
                         message += f" Invite sent to {email}."
 
-                    return {
+                    return {{
                         "status": "Scheduled ✅",
                         "event": event_link,
                         "parsed": parsed,
                         "message": message
-                    }
+                    }}
 
                 # 2. Check Schedule
                 elif parsed["action"] == "check_schedule":
                     schedule = check_schedule(creds, parsed["date_time"])
-                    return {
+                    return {{
                         "status": "Schedule ✅",
                         "events": schedule,
                         "parsed": parsed
-                    }
+                    }}
 
                 # 3. Check Availability
                 elif parsed["action"] == "check_availability":
                     free_slots = check_availability(creds, parsed["date_time"])
-                    return {
+                    return {{
                         "status": "Free Slots ✅",
                         "slots": free_slots,
                         "parsed": parsed
-                    }
+                    }}
 
                 # 4. Summarize Emails
                 elif parsed["action"] == "summarize_emails":
@@ -302,46 +314,46 @@ def parse_and_execute(data: TaskInput):
                         parsed.get("date_time"),
                         parsed.get("query")
                     )
-                    return {
+                    return {{
                         "status": "Summary ✅",
                         "emails": emails,
                         "parsed": parsed
-                    }
+                    }}
 
                 # 5. Send Email
                 elif parsed["action"] == "send_email":
                     result = send_email(creds, parsed["email"], parsed["subject"], parsed["body"])
-                    return {
+                    return {{
                         "status": "Email Sent ✅",
                         "result": result,
                         "parsed": parsed
-                    }
+                    }}
 
                 # 6. List Unread Emails
                 elif parsed["action"] == "list_unread":
                     emails = list_unread(creds, parsed["date_time"])
-                    return {
+                    return {{
                         "status": "Unread ✅",
                         "emails": emails,
                         "parsed": parsed
-                    }
+                    }}
 
                 # 7. Search Email
                 elif parsed["action"] == "search_email":
                     emails = search_email(creds, parsed["query"])
-                    return {
+                    return {{
                         "status": "Search ✅",
                         "emails": emails,
                         "parsed": parsed
-                    }
+                    }}
 
             except (json.JSONDecodeError, KeyError) as e:
                 # Fallback for parsing errors
-                return {"status": "Error ❌", "error": f"Failed to parse action: {e}"}
+                return {{"status": "Error ❌", "error": f"Failed to parse action: {e}"}}
         
         else:
             # Fallback for non-JSON responses
-            return {"status": "Processed ✅", "message": raw_response}
+            return {{"status": "Processed ✅", "message": raw_response}}
 
     except HTTPException as e:
         raise e
@@ -351,9 +363,9 @@ def parse_and_execute(data: TaskInput):
 @app.get("/")
 def root():
     """Root endpoint"""
-    return {"message": "Smart To-Do List API is running"}
+    return {{"message": "Smart To-Do List API is running"}}
 
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {{"status": "healthy"}}
