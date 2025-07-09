@@ -15,14 +15,9 @@
         const authorized = params.get('authorized') === 'true';
         const error = params.get('error');
 
-        if (window.opener) {
-            if (type === 'oauth_success') {
-                window.opener.postMessage({ type: 'oauth_success', data: { authorized: authorized } }, window.location.origin);
-            } else if (type === 'oauth_error') {
-                window.opener.postMessage({ type: 'oauth_error', error: error }, window.location.origin);
-            }
-        }
-        window.close();
+        // Redirect back to the main application with the OAuth status
+        const redirectUrl = `${window.location.origin}?type=${type}&authorized=${authorized}${error ? `&error=${encodeURIComponent(error)}` : ''}`;
+        window.location.replace(redirectUrl);
     </script>
 </body>
 </html>

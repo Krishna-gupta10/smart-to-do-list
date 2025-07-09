@@ -25,31 +25,29 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Listen for OAuth messages from popup
+  // Handle OAuth redirect parameters
   useEffect(() => {
-    const handleMessage = (event) => {
-      const backendOrigin = new URL(API_BASE_URL).origin;
-      if (event.origin !== backendOrigin) {
-        return;
-      }
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type');
+    const error = params.get('error');
 
-      if (event.data.type === 'oauth_success') {
-        console.log('OAuth success message received:', event.data);
-        setIsAuthorized(true);
-        setAuthLoading(false);
-        // Double-check auth status
-        setTimeout(() => {
-          checkAuthStatus();
-        }, 1000);
-      } else if (event.data.type === 'oauth_error') {
-        console.error('OAuth error:', event.data.error);
-        setAuthLoading(false);
-      }
-    };
+    if (type === 'oauth_error' && error) {
+      console.error('OAuth error from redirect:', decodeURIComponent(error));
+      // Optionally, display this error to the user in the UI
+      // For example, by setting a state variable and rendering it.
+      // For now, just logging to console.
+    }
+    // Clean up URL parameters to avoid re-processing on subsequent renders
+    if (type === 'oauth_success' || type === 'oauth_error') {
+      params.delete('type');
+      params.delete('authorized');
+      params.delete('error');
+      const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}${window.location.hash}`;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, []);
 
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [API_BASE_URL]);
+  
 
   const checkAuthStatus = async () => {
     try {
@@ -86,19 +84,6 @@ function App() {
     setAuthLoading(true);
     console.log('Starting OAuth flow...');
 
-    const authWindow = window.open(
-      '',
-      'oauth',
-      'width=600,height=700,scrollbars=yes,resizable=yes,left=' +
-      (window.screen.width / 2 - 300) + ',top=' + (window.screen.height / 2 - 350)
-    );
-
-    if (!authWindow) {
-      console.error('Failed to open popup window. Please disable your popup blocker.');
-      setAuthLoading(false);
-      return;
-    }
-
     try {
       const origin = window.location.origin;
       const res = await fetch(`${API_BASE_URL}/authorize?origin=${encodeURIComponent(origin)}`, {
@@ -107,31 +92,14 @@ function App() {
       const data = await res.json();
 
       if (data.auth_url) {
-        console.log('Redirecting popup to OAuth URL:', data.auth_url);
-        authWindow.location.href = data.auth_url;
+        console.log('Redirecting to OAuth URL:', data.auth_url);
+        window.location.href = data.auth_url;
       } else {
         console.error('No auth URL received from backend');
-        authWindow.close();
         setAuthLoading(false);
       }
-
-      // Poll for window closure as a fallback
-      const checkClosed = setInterval(() => {
-        if (authWindow.closed) {
-          console.log('Popup window closed');
-          clearInterval(checkClosed);
-          setAuthLoading(false);
-
-          // Check auth status after window closes (fallback)
-          setTimeout(() => {
-            checkAuthStatus();
-          }, 1000);
-        }
-      }, 1000);
-
     } catch (error) {
       console.error('Error getting auth URL:', error);
-      authWindow.close();
       setAuthLoading(false);
     }
   };

@@ -27,8 +27,8 @@ def get_auth_url(origin: str):
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
         
-        # TODO: Use a more dynamic way to set the redirect_uri for production
-        redirect_uri = f"http://localhost:8000/oauth2callback"
+        # Use the origin from the frontend to construct the redirect_uri
+        redirect_uri = f"{origin}/oauth_redirect.html"
         
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
@@ -57,8 +57,8 @@ def exchange_code(code, origin: str):
         if not os.path.exists(CLIENT_SECRETS_FILE):
             raise FileNotFoundError(f"Client secrets file not found: {CLIENT_SECRETS_FILE}")
         
-        # TODO: Use a more dynamic way to set the redirect_uri for production
-        redirect_uri = f"http://localhost:8000/oauth2callback"
+        # Use the origin from the frontend to construct the redirect_uri
+        redirect_uri = f"{origin}/oauth_redirect.html"
         
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRETS_FILE,
